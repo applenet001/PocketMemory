@@ -1,0 +1,16 @@
+{
+    "user_id":  "guest",
+    "llm_provider":  "openai",
+    "llm_model":  "deepseek-flash",
+    "llm_config":  {
+                       "openai_base_url":  "https://api.deepseek.com/v1"
+                   },
+    "embedder_provider":  "openai",
+    "embedding_model":  "Qwen3-Embedding-0.6B",
+    "embedding_model_dims":  1024,
+    "embedding_config":  {
+                             "openai_base_url":  "http://localhost:8008/v1",
+                             "api_key":  "EMPTY"
+                         },
+    "save_dir":  "../outputs/mobilemem-qwen/traced-smoke20/mem0"
+}

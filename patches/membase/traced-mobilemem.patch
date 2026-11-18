@@ -1,0 +1,348 @@
+diff --git a/examples/trace_memory_lifecycle_with_membase/run_traced_construction.sh b/examples/trace_memory_lifecycle_with_membase/run_traced_construction.sh
+index 97c5a79..a3d0e9a 100644
+--- a/examples/trace_memory_lifecycle_with_membase/run_traced_construction.sh
++++ b/examples/trace_memory_lifecycle_with_membase/run_traced_construction.sh
+@@ -11,8 +11,8 @@
+ #  METHOD   : mem0 | evermemos | rag | long_context
+ #  DATASET  : locomo | realmem | longmemeval
+ # ================================================================
+-METHOD="evermemos"
+-DATASET="locomo"
++METHOD="${METHOD:-rag}"
++DATASET="${DATASET:-mobilemem}"
+ 
+ num_workers=1
+ sample_size=1
+@@ -34,6 +34,7 @@ case "$METHOD" in
+ esac
+ 
+ config_path="${example_dir}/configs/${METHOD}_config.json"
++source "${example_dir}/mobilemem_profile.sh"
+ if [[ ! -f "$config_path" ]]; then
+     echo "Config not found: $config_path" >&2
+     exit 1
+@@ -41,6 +42,7 @@ fi
+ 
+ # ---- Dataset -> dataset type / path ----
+ case "$DATASET" in
++  mobilemem) dataset_type="MobileMem" ;;
+   locomo)
+     dataset_type="LoCoMo"
+     dataset_path="${example_dir}/data/LoCoMo/locomo10.json"
+@@ -57,8 +59,8 @@ case "$DATASET" in
+ esac
+ 
+ # ---- Output layout (single source of truth: config's save_dir) ----
+-save_dir=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['save_dir'])" "$config_path")
+-log_dir="${example_dir}/logs/${METHOD}_${DATASET}"
++save_dir=$("$PYTHON" -c "import json,sys; print(json.load(open(sys.argv[1]))['save_dir'])" "$config_path")
++log_dir="${save_dir}/logs"
+ traced_data_save_dir="${save_dir}/traced_data"
+ token_cost_file="${save_dir}/token_cost_traced_${METHOD}"
+ 
+@@ -71,7 +73,7 @@ if [[ "$DATASET" == "realmem" ]]; then
+     extra_args+=(--online-eval-config-path "${example_dir}/configs/realmem_eval_config.json")
+ fi
+ 
+-nohup python memory_construction.py \
++nohup "$PYTHON" memory_construction.py \
+     --memory-type "$memory_type" \
+     --dataset-type "$dataset_type" \
+     --dataset-path "$dataset_path" \
+@@ -92,3 +94,5 @@ echo "Profile : ${METHOD} / ${DATASET}"
+ echo "Log     : $log_file"
+ echo "Output  : $save_dir"
+ echo "Traces  : $traced_data_save_dir"
++
++if [[ "${WAIT_FOR_COMPLETION:-0}" == "1" ]]; then wait "$(cat "${log_dir}/traced_construction.pid")"; fi
+diff --git a/examples/trace_memory_lifecycle_with_membase/run_traced_evaluation.sh b/examples/trace_memory_lifecycle_with_membase/run_traced_evaluation.sh
+index a9a4d6b..9bffb1b 100644
+--- a/examples/trace_memory_lifecycle_with_membase/run_traced_evaluation.sh
++++ b/examples/trace_memory_lifecycle_with_membase/run_traced_evaluation.sh
+@@ -15,8 +15,8 @@
+ #  DATASET  : locomo | longmemeval
+ #             (realmem is evaluated online during construction)
+ # ================================================================
+-METHOD="evermemos"
+-DATASET="locomo"
++METHOD="${METHOD:-rag}"
++DATASET="${DATASET:-mobilemem}"
+ 
+ top_k=10
+ start_idx=0
+@@ -35,6 +35,7 @@ cd "$(dirname "$0")/../.."
+ example_dir="examples/trace_memory_lifecycle_with_membase"
+ 
+ config_path="${example_dir}/configs/${METHOD}_config.json"
++source "${example_dir}/mobilemem_profile.sh"
+ if [[ ! -f "$config_path" ]]; then
+     echo "Config not found: $config_path" >&2
+     exit 1
+@@ -42,6 +43,7 @@ fi
+ 
+ # ---- Dataset -> dataset type ----
+ case "$DATASET" in
++  mobilemem) dataset_type="MobileMem" ;;
+   locomo)      dataset_type="LoCoMo"      ;;
+   longmemeval) dataset_type="LongMemEval" ;;
+   realmem)
+@@ -53,8 +55,8 @@ case "$DATASET" in
+ esac
+ 
+ # ---- Output layout (single source of truth: config's save_dir) ----
+-save_dir=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['save_dir'])" "$config_path")
+-log_dir="${example_dir}/logs/${METHOD}_${DATASET}"
++save_dir=$("$PYTHON" -c "import json,sys; print(json.load(open(sys.argv[1]))['save_dir'])" "$config_path")
++log_dir="${save_dir}/logs"
+ traced_data_save_dir="${save_dir}/traced_data"
+ search_results_path="${save_dir}/${top_k}_${start_idx}_${end_idx}.json"
+ 
+@@ -67,7 +69,7 @@ fi
+ mkdir -p "$log_dir" "$traced_data_save_dir"
+ log_file="${log_dir}/traced_evaluation.log"
+ 
+-nohup python memory_evaluation.py \
++nohup "$PYTHON" memory_evaluation.py \
+     --search-results-path "$search_results_path" \
+     --dataset-type "$dataset_type" \
+     --qa-model "$qa_model" \
+@@ -85,3 +87,5 @@ echo "Profile : ${METHOD} / ${DATASET}"
+ echo "Log     : $log_file"
+ echo "Results : $search_results_path"
+ echo "Traces  : $traced_data_save_dir"
++
++if [[ "${WAIT_FOR_COMPLETION:-0}" == "1" ]]; then wait "$(cat "${log_dir}/traced_evaluation.pid")"; fi
+diff --git a/examples/trace_memory_lifecycle_with_membase/run_traced_search.sh b/examples/trace_memory_lifecycle_with_membase/run_traced_search.sh
+index d7781f6..b2f897a 100644
+--- a/examples/trace_memory_lifecycle_with_membase/run_traced_search.sh
++++ b/examples/trace_memory_lifecycle_with_membase/run_traced_search.sh
+@@ -14,8 +14,8 @@
+ #             (realmem does online evaluation during construction,
+ #              so search/evaluation stages are not applicable)
+ # ================================================================
+-METHOD="evermemos"
+-DATASET="locomo"
++METHOD="${METHOD:-rag}"
++DATASET="${DATASET:-mobilemem}"
+ 
+ num_workers=1
+ top_k=10
+@@ -36,6 +36,7 @@ case "$METHOD" in
+ esac
+ 
+ config_path="${example_dir}/configs/${METHOD}_config.json"
++source "${example_dir}/mobilemem_profile.sh"
+ if [[ ! -f "$config_path" ]]; then
+     echo "Config not found: $config_path" >&2
+     exit 1
+@@ -43,6 +44,7 @@ fi
+ 
+ # ---- Dataset -> dataset type ----
+ case "$DATASET" in
++  mobilemem) dataset_type="MobileMem" ;;
+   locomo)      dataset_type="LoCoMo"      ;;
+   longmemeval) dataset_type="LongMemEval" ;;
+   realmem)
+@@ -54,8 +56,8 @@ case "$DATASET" in
+ esac
+ 
+ # ---- Output layout (single source of truth: config's save_dir) ----
+-save_dir=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['save_dir'])" "$config_path")
+-log_dir="${example_dir}/logs/${METHOD}_${DATASET}"
++save_dir=$("$PYTHON" -c "import json,sys; print(json.load(open(sys.argv[1]))['save_dir'])" "$config_path")
++log_dir="${save_dir}/logs"
+ traced_data_save_dir="${save_dir}/traced_data"
+ dataset_path="${save_dir}/${dataset_type}_stage_1.json"
+ 
+@@ -68,7 +70,9 @@ fi
+ mkdir -p "$log_dir" "$traced_data_save_dir"
+ log_file="${log_dir}/traced_search.log"
+ 
+-nohup python memory_search.py \
++range_args=()
++if [[ "$DATASET" == "mobilemem" ]]; then range_args=(--start-idx "$start_idx" --end-idx "$end_idx"); fi
++nohup "$PYTHON" memory_search.py \
+     --memory-type "$memory_type" \
+     --dataset-type "$dataset_type" \
+     --dataset-path "$dataset_path" \
+@@ -76,6 +80,7 @@ nohup python memory_search.py \
+     --config-path "$config_path" \
+     --num-workers "$num_workers" \
+     --top-k "$top_k" \
++    "${range_args[@]}" \
+     --traced-data-save-dir "$traced_data_save_dir" \
+     --tracing \
+     > "$log_file" 2>&1 &
+@@ -86,3 +91,5 @@ echo "Profile : ${METHOD} / ${DATASET}"
+ echo "Log     : $log_file"
+ echo "Output  : $save_dir"
+ echo "Traces  : $traced_data_save_dir"
++
++if [[ "${WAIT_FOR_COMPLETION:-0}" == "1" ]]; then wait "$(cat "${log_dir}/traced_search.pid")"; fi
+diff --git a/membase/baselines/mem0/llms/openai.py b/membase/baselines/mem0/llms/openai.py
+index 4ac0b75..def3a9b 100644
+--- a/membase/baselines/mem0/llms/openai.py
++++ b/membase/baselines/mem0/llms/openai.py
+@@ -135,7 +135,17 @@ class OpenAILLM(LLMBase):
+         if tools:  # TODO: Remove tools if no issues found with new memory addition logic
+             params["tools"] = tools
+             params["tool_choice"] = tool_choice
++        if self.config.model == "deepseek-flash":
++            params.setdefault("reasoning_effort", "low")
+         response = self.client.chat.completions.create(**params)
++        if self.config.model == "deepseek-flash" and os.getenv("DEEPSEEK_USAGE_LOG"):
++            from pathlib import Path
++            import time
++            usage_path = Path(os.environ["DEEPSEEK_USAGE_LOG"])
++            usage_path.parent.mkdir(parents=True, exist_ok=True)
++            usage = response.usage.model_dump() if response.usage else None
++            with usage_path.open("a", encoding="utf-8") as log:
++                log.write(json.dumps({"timestamp": time.time(), "model": self.config.model, "method": os.getenv("MEMORY_METHOD"), "stage": "memory_construction", "usage": usage, "usage_missing": usage is None}) + "\n")
+         parsed_response = self._parse_response(response, tools)
+         if self.config.response_callback:
+             try:
+diff --git a/membase/configs/long_context.py b/membase/configs/long_context.py
+index f9325e3..1c78d33 100644
+--- a/membase/configs/long_context.py
++++ b/membase/configs/long_context.py
+@@ -18,9 +18,10 @@ class LongContextConfig(MemBaseConfig):
+         gt=0,
+     )
+     llm_model: str = Field(
+-        default="gpt-4.1-mini",
++        ...,
++        min_length=1,
+         description=(
+-            "LLM model name. It is used to get the corresponding tokenizer. "
++            "Required tokenizer identifier for token counting only; not an inference model. "
+             "An identifier from HuggingFace Hub or a local model path is also supported."
+         ),
+     )
+diff --git a/membase/configs/naive_rag.py b/membase/configs/naive_rag.py
+index 252a748..51fa9eb 100644
+--- a/membase/configs/naive_rag.py
++++ b/membase/configs/naive_rag.py
+@@ -43,10 +43,11 @@ class NaiveRAGConfig(MemBaseConfig):
+             "achieves a chunking-with-overlap effect similar to offline chunking strategies."
+         )
+     )
+-    llm_model: str | None = Field(
+-        default="gpt-4.1-mini",
++    llm_model: str = Field(
++        ...,
++        min_length=1,
+         description=(
+-            "LLM model name. It is used to get the corresponding tokenizer. "
++            "Required tokenizer identifier for token counting only; not an inference model. "
+             "An identifier from HuggingFace Hub or a local model path is also supported."
+         ),
+     )
+diff --git a/membase/inference_utils/backends.py b/membase/inference_utils/backends.py
+index 0d92994..6cd066f 100644
+--- a/membase/inference_utils/backends.py
++++ b/membase/inference_utils/backends.py
+@@ -2,6 +2,13 @@ from openai import OpenAI
+ from concurrent.futures import ThreadPoolExecutor
+ import warnings
+ from typing import Any, Callable
++import json
++import os
++import time
++from pathlib import Path
++from threading import Lock
++
++_usage_lock = Lock()
+ 
+ 
+ class OpenAIClient(OpenAI): 
+@@ -46,6 +53,10 @@ class OpenAIClient(OpenAI):
+                 A dictionary containing raw text, post-processed result, and optionally 
+                 reasoning content if the model returns reasoning tokens.
+         """
++        usage_stage = kwargs.pop('usage_stage', 'unknown')
++        usage = None
++        if model == 'deepseek-flash' and stream:
++            kwargs['stream_options'] = {'include_usage': True}
+         response_content = None 
+         counter = 0 
+         content = ''
+@@ -65,6 +76,8 @@ class OpenAIClient(OpenAI):
+                     chunks = []
+                     reasoning_chunks = [] 
+                     for chunk in response:
++                        if getattr(chunk, 'usage', None) is not None:
++                            usage = chunk.usage.model_dump()
+                         if len(chunk.choices) > 0:
+                             if hasattr(chunk.choices[0].delta, "content"):
+                                 chunks.append(chunk.choices[0].delta.content or '')
+@@ -81,12 +94,21 @@ class OpenAIClient(OpenAI):
+                     if len(reasoning_chunks) > 0:
+                         reasoning_content = ''.join(reasoning_chunks)
+                 else:
++                    if response.usage is not None:
++                        usage = response.usage.model_dump()
+                     content = response.choices[0].message.content
+                     if hasattr(response.choices[0].message, "reasoning_content"):
+                         reasoning_content = response.choices[0].message.reasoning_content 
+             except Exception as e:
+                 print(e)
+             finally: 
++                if model == 'deepseek-flash':
++                    log_path = Path(os.environ.get('DEEPSEEK_USAGE_LOG', '../outputs/mobilemem-qwen/smoke20/deepseek_usage.jsonl'))
++                    log_path.parent.mkdir(parents=True, exist_ok=True)
++                    record = {'timestamp': time.time(), 'model': model, 'stage': usage_stage, 'method': os.environ.get('MEMORY_METHOD'), 'attempt': counter + 1, 'usage': usage, 'usage_missing': usage is None}
++                    with _usage_lock, log_path.open('a', encoding='utf-8') as log:
++                        log.write(json.dumps(record) + '\n')
++                    usage = None
+                 response_content = content if post_processor is None else post_processor(content)
+                 counter += 1
+         
+@@ -325,6 +347,8 @@ class OpenAIClientPool:
+                 A single response dictionary if there is only one conversation, or a list of 
+                 response dictionaries otherwise.
+         """
++        if self.model == "deepseek-flash":
++            kwargs.setdefault("reasoning_effort", "low")
+         max_batch_size = len(self.client_pool) 
+ 
+         outputs = [] 
+diff --git a/membase/inference_utils/base_operator.py b/membase/inference_utils/base_operator.py
+index f258108..03354fa 100644
+--- a/membase/inference_utils/base_operator.py
++++ b/membase/inference_utils/base_operator.py
+@@ -182,6 +182,8 @@ class NonCachedLLMOperator(ABC):
+                 messages_list[batch_indice] 
+                 for batch_indice in range(i, min(i + batch_size, size))
+             ]
++            if getattr(self._interface, 'model', None) == 'deepseek-flash':
++                kwargs['usage_stage'] = type(self).__name__
+             results = self._interface(batch_messages_list, **kwargs)
+             if isinstance(results, dict):
+                 results = [results]
+@@ -194,4 +196,4 @@ class NonCachedLLMOperator(ABC):
+         progress_bar.close()
+         if aggregate:
+             return self._aggregate(final_responses)
+-        return final_responses 
+\ No newline at end of file
++        return final_responses 
+diff --git a/membase/utils/token_monitor.py b/membase/utils/token_monitor.py
+index fbc15d8..698b86a 100644
+--- a/membase/utils/token_monitor.py
++++ b/membase/utils/token_monitor.py
+@@ -1,5 +1,6 @@
+ from __future__ import annotations
+ import functools
++from pathlib import Path
+ import json
+ from collections import deque
+ from threading import RLock, Lock
+@@ -28,6 +29,8 @@ def get_tokenizer_for_model(model: str) -> SelectTokenizerResponse:
+         `SelectTokenizerResponse`:
+             The litellm tokenizer for the model.
+     """
++    if model and Path(model).is_file():
++        return SelectTokenizerResponse(type="huggingface_tokenizer", tokenizer=Tokenizer.from_file(model))
+     try:
+         tokenizer = Tokenizer.from_pretrained(model)
+         return SelectTokenizerResponse(

@@ -1,0 +1,19 @@
+# Only ship the current traced experiment. Ignored files remain on disk.
+/*
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/LICENSE
+!/requirements-experiment.txt
+!/scripts/
+/scripts/*
+!/scripts/run-traced-smoke20.sh
+!/scripts/serve_qwen_embedding.py
+!/config/
+/config/*
+!/config/templates/
+!/patches/
+/patches/*
+!/patches/membase/
+__pycache__/
+*.pyc

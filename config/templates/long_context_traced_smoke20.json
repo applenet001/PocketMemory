@@ -1,0 +1,6 @@
+{
+    "user_id":  "guest",
+    "context_window":  200000,
+    "llm_model":  "REPLACE_WITH_ABSOLUTE_QWEN_TOKENIZER_JSON_PATH",
+    "save_dir":  "../outputs/mobilemem-qwen/traced-smoke20/long_context"
+}
