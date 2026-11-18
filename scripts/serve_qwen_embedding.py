@@ -1,5 +1,6 @@
 """Local OpenAI-compatible text embedding endpoint for smoke evaluation."""
 import json
+import os
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -7,7 +8,7 @@ import torch
 from sentence_transformers import SentenceTransformer
 
 torch.set_num_threads(4)
-model = SentenceTransformer(str(Path.home()/'.cache/modelscope/models/Qwen--Qwen3-Embedding-0.6B/snapshots/master'), device='cpu', local_files_only=True)
+model = SentenceTransformer(os.environ.get('QWEN_MODEL_PATH', str(Path.home()/'.cache/modelscope/models/Qwen--Qwen3-Embedding-0.6B/snapshots/master')), device='cpu', local_files_only=True)
 
 class Handler(BaseHTTPRequestHandler):
     def do_POST(self):

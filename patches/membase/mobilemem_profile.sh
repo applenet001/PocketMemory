@@ -3,7 +3,13 @@ if [[ "$DATASET" == "mobilemem" ]]; then
     case "$METHOD" in rag|long_context|mem0) ;; *) echo "Unsupported MobileMem method: $METHOD" >&2; exit 1;; esac
     config_path="../config/mobilemem-qwen/${METHOD}_traced_smoke20.json"
     dataset_path="../data/text/smoke20/mobilemem_data.json"
-    PYTHON="${PYTHON:-../pocketmemory/Scripts/python.exe}"
+    if [[ -z "${PYTHON:-}" ]]; then
+        if [[ -x ../pocketmemory/bin/python ]]; then
+            PYTHON=../pocketmemory/bin/python
+        else
+            PYTHON=../pocketmemory/Scripts/python.exe
+        fi
+    fi
     sample_size=$("$PYTHON" -c 'import json,sys; print(len(json.load(open(sys.argv[1],encoding="utf-8"))))' "$dataset_path")
     start_idx=0
     end_idx="$sample_size"
