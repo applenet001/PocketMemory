@@ -1,19 +1,34 @@
-# Only ship the current traced experiment. Ignored files remain on disk.
-/*
-!/.gitignore
-!/.gitattributes
-!/README.md
-!/LICENSE
-!/requirements-experiment.txt
-!/scripts/
-/scripts/*
-!/scripts/run-traced-smoke20.sh
-!/scripts/serve_qwen_embedding.py
-!/config/
-/config/*
-!/config/templates/
-!/patches/
-/patches/*
-!/patches/membase/
+# Local Python and editor files
+.venv/
 __pycache__/
-*.pyc
+*.py[cod]
+*.pth
+.DS_Store
+
+# Local configuration, accounts, and memory
+.env
+.env.*
+config/local.env
+iphone-companion/runtime*/
+iphone-companion/vendor/
+*.pem
+*.key
+*.sqlite*
+*.db
+*.dump
+*.backup
+
+# Local models, experiment data, and generated artifacts
+models/
+data/
+outputs/
+*.pt
+*.pth
+*.bin
+*.ckpt
+*.safetensors
+*.onnx
+*.gguf
+*.npy
+*.npz
+*.pkl

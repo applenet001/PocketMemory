@@ -179,6 +179,19 @@ index d7781f6..b2f897a 100644
  echo "Traces  : $traced_data_save_dir"
 +
 +if [[ "${WAIT_FOR_COMPLETION:-0}" == "1" ]]; then wait "$(cat "${log_dir}/traced_search.pid")"; fi
+diff --git a/membase/baselines/mem0/embeddings/openai.py b/membase/baselines/mem0/embeddings/openai.py
+index f70ae39..9fe3b1d 100644
+--- a/membase/baselines/mem0/embeddings/openai.py
++++ b/membase/baselines/mem0/embeddings/openai.py
+@@ -29,7 +29,7 @@ class OpenAIEmbedding(EmbeddingBase):
+                 DeprecationWarning,
+             )
+ 
+-        self.client = OpenAI(api_key=api_key, base_url=base_url)
++        self.client = OpenAI(api_key=api_key, base_url=base_url, default_headers={"X-Memory-Method": os.getenv("MEMORY_METHOD", "mem0")})
+ 
+     def embed(self, text, memory_action: Optional[Literal["add", "search", "update"]] = None):
+         """
 diff --git a/membase/baselines/mem0/llms/openai.py b/membase/baselines/mem0/llms/openai.py
 index 4ac0b75..def3a9b 100644
 --- a/membase/baselines/mem0/llms/openai.py

@@ -1,7 +1,10 @@
 # MobileMem smoke20 profile. Sourced after the scripts enter the MemBase directory.
 if [[ "$DATASET" == "mobilemem" ]]; then
     case "$METHOD" in rag|long_context|mem0) ;; *) echo "Unsupported MobileMem method: $METHOD" >&2; exit 1;; esac
-    config_path="../config/mobilemem-qwen/${METHOD}_traced_smoke20.json"
+    config_path="${CONFIG_PATH:-../config/mobilemem-qwen/${METHOD}_traced_smoke20.json}"
+    if [[ ! -f "$config_path" ]]; then
+        config_path="../config/mobilemem-qwen/${METHOD}_traced_smoke20.json"
+    fi
     dataset_path="../data/text/smoke20/mobilemem_data.json"
     if [[ -z "${PYTHON:-}" ]]; then
         if [[ -x ../pocketmemory/bin/python ]]; then
@@ -19,11 +22,17 @@ if [[ "$DATASET" == "mobilemem" ]]; then
     judge_model="deepseek-flash"
     qa_batch_size=1
     judge_batch_size=1
+    # Use the same retrieval and evaluation batch settings for RAG and Mem0.
+    if [[ "$METHOD" == "rag" || "$METHOD" == "mem0" ]]; then
+        top_k=10
+        qa_batch_size=4
+        judge_batch_size=4
+    fi
     api_config_path="../outputs/private/deepseek-api.json"
     export PYTHONIOENCODING=utf-8 PYTHONUTF8=1 NO_PROXY=localhost,127.0.0.1,::1
     export no_proxy="$NO_PROXY"
     export MEMORY_METHOD="$METHOD"
-    export DEEPSEEK_USAGE_LOG="../outputs/mobilemem-qwen/traced-smoke20/${METHOD}/deepseek_usage.jsonl"
+    export DEEPSEEK_USAGE_LOG="${DEEPSEEK_USAGE_LOG:-../outputs/mobilemem-qwen/traced-smoke20/${METHOD}/deepseek_usage.jsonl}"
     # Mem0 needs an OpenAI-compatible credential as well as the evaluation API config.
     export OPENAI_API_KEY
     OPENAI_API_KEY=$("$PYTHON" -c 'import json,sys; print(json.load(open(sys.argv[1]))["api_keys"][0])' "$api_config_path")

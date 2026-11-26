@@ -23,7 +23,7 @@ class Handler(BaseHTTPRequestHandler):
             usage_path=Path(__file__).resolve().parents[1]/'outputs/mobilemem-qwen/smoke20/embedding_usage.jsonl'
             usage_path.parent.mkdir(parents=True,exist_ok=True)
             with usage_path.open('a',encoding='utf-8') as log:
-                log.write(json.dumps({'timestamp':time.time(),'model':body['model'],'texts':len(texts),'input_tokens':sum(len(model.tokenizer.encode(t)) for t in texts),'dimensions':len(vectors[0]),'api_cost':0})+'\n')
+                log.write(json.dumps({'timestamp':time.time(),'method':self.headers.get('X-Memory-Method', 'unknown'),'model':body['model'],'texts':len(texts),'input_tokens':sum(len(model.tokenizer.encode(t)) for t in texts),'dimensions':len(vectors[0]),'api_cost':0})+'\n')
             result={'object':'list','model':body['model'],'data':[{'object':'embedding','index':i,'embedding':v} for i,v in enumerate(vectors)],'usage':{'prompt_tokens':sum(len(model.tokenizer.encode(t)) for t in texts),'total_tokens':sum(len(model.tokenizer.encode(t)) for t in texts)}}
             payload=json.dumps(result).encode()
             self.send_response(200)

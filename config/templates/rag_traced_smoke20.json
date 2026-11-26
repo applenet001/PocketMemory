@@ -8,7 +8,10 @@
     "embedding_kwargs":  {
                              "api_key":  "EMPTY",
                              "base_url":  "http://localhost:8008/v1",
-                             "check_embedding_ctx_length":  false
+                             "check_embedding_ctx_length":  false,
+                             "default_headers":  {
+                                                     "X-Memory-Method":  "rag"
+                                                 }
                          },
     "save_dir":  "../outputs/mobilemem-qwen/traced-smoke20/rag"
 }

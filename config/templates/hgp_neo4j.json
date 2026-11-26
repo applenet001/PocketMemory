@@ -1,0 +1,14 @@
+{
+  "save_dir": "../outputs/mobilemem-qwen/hgp-original",
+  "graph_namespace": "mobilemem-hgp3-original",
+  "neo4j_uri": "neo4j://127.0.0.1:7687",
+  "semantic_database": "semantic",
+  "episodic_database": "episodic",
+  "tau0": 0.9,
+  "tau_min": 0.5,
+  "beta": 0.05,
+  "update_batch_size": 100,
+  "adaptive_updates": true,
+  "allow_llm_fallback": false,
+  "allow_llm_extraction": false
+}

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f4f2ed"><meta name="apple-mobile-web-app-capable" content="yes"><title>PocketMemory · 随身记忆</title><link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script></head>
+<body><main>
+<header><a class="brand" href="/">◈ PocketMemory</a><span class="badge">私人记忆库</span></header>
+<section class="hero"><span class="eyebrow">留住当下，日后想起。</span><h1>值得记住的，<br>都放在这里。</h1><p>链接、片段、照片与文件，变成有来源的记忆。</p></section>
+<section id="login" class="panel" hidden><h2>登录自己的记忆库</h2><p>输入管理员分配给你的个人访问密钥。不同用户的上传与记忆分别保存。</p><form id="login-form"><label for="token">个人访问密钥</label><input id="token" type="password" autocomplete="current-password" required><button>登录</button></form></section>
+<div id="workspace" hidden>
+<div class="account-bar"><span id="account-name"></span><button id="logout" class="secondary">退出登录</button></div>
+<nav><button id="tab-experiment" hidden>实验画像</button><button id="tab-experiment-search" hidden>实验搜索</button><button id="tab-workflows" hidden>任务与流程</button><button id="tab-library">记忆库</button><button id="tab-capture">上传 / 记录</button><button id="tab-graph">记忆关系图</button><button id="tab-guide">iPhone 分享</button><button id="tab-admin" hidden>用户管理</button></nav>
+<section id="experiment" class="panel" hidden>
+  <h2>MobileMem 实验画像</h2>
+  <p>看看这个人喜欢什么、做过什么、记下了哪些做法，以及任务进行到哪一步。</p>
+  <label for="experiment-user">评测用户</label>
+  <select id="experiment-user"><option value="">请选择评测用户</option></select>
+  <div id="experiment-portrait" class="portrait-note" role="status" hidden></div>
+  <p id="experiment-status" role="status"></p>
+  <details class="hint">
+    <summary>查看画像依据</summary>
+    <p>近况速览参考每类最近 5 条记录。这里展示偏好和事件，做法和状态变化可以在「任务与流程」查看。</p>
+    <div id="experiment-profile"></div>
+  </details>
+</section>
+<section id="experiment-search" class="panel" hidden>
+  <h2>实验搜索</h2>
+  <p>选一位评测用户，直接输入问题。每种记忆最多返回 5 条，DeepSeek 根据这些记录回答。</p>
+  <form id="experiment-search-form">
+    <label for="experiment-search-user">评测用户</label>
+    <select id="experiment-search-user" required><option value="">请选择评测用户</option></select>
+    <label for="experiment-query">你想问什么？</label>
+    <input id="experiment-query" type="search" maxlength="160" placeholder="例如：他给家人准备了什么？" required>
+    <button type="submit">搜索</button>
+  </form>
+  <p id="experiment-search-status" role="status"></p>
+  <section id="experiment-answer" class="portrait-note" aria-labelledby="experiment-answer-title" hidden>
+    <h3 id="experiment-answer-title">根据记忆回答</h3>
+    <p id="experiment-answer-text" role="status"></p>
+  </section>
+  <div id="experiment-search-results"></div>
+</section>
+<section id="workflows" class="panel" hidden>
+  <h2>任务与流程</h2>
+  <label id="workflow-user-label" for="workflow-user">评测用户</label>
+  <select id="workflow-user"><option value="">请选择评测用户</option></select>
+  <button id="workflow-refresh" class="secondary" type="button">刷新任务与流程</button>
+  <p id="workflow-status" role="status"></p>
+  <div id="workflow-graphs"></div>
+</section>
+<section id="admin" class="panel" hidden><h2>用户管理</h2><p>每个用户使用独立密钥。将新用户自己的密钥交给本人，不要分享管理员密钥。</p><form id="create-user"><label for="new-user-name">用户名称</label><input id="new-user-name" required maxlength="80" placeholder="例如：小王"><button id="create-user-button">创建用户</button></form><div id="user-credential" hidden><label for="new-user-key">个人密钥（仅此时显示，请保存并交给本人）</label><textarea id="new-user-key" readonly rows="4"></textarea><button id="hide-user-key" class="secondary">已保存，隐藏密钥</button></div><h3>已有用户</h3><button id="users-refresh" class="secondary">刷新用户列表</button><div id="users-list"></div></section>
+<section id="graph" class="panel" hidden>
+  <h2>Neo4j 记忆图</h2>
+  <label for="graph-database">图视图</label>
+  <select id="graph-database"></select>
+  <label id="graph-scope-label" for="graph-scope">数据空间</label><select id="graph-scope"><option value="">请先连接图数据库</option></select>
+  <button id="graph-refresh" class="secondary">读取图</button><p id="graph-status" role="status"></p>
+  <div id="graph-canvas"></div><pre id="graph-detail">点一条记忆，查看内容和关联。</pre>
+  <button id="graph-source" class="secondary" hidden>查看原始记忆</button>
+  <details id="graph-technical" hidden><summary>查看图数据详情</summary><pre id="graph-technical-data"></pre></details>
+  <div id="graph-list"></div><p class="hint">每次最多显示 80 个节点、160 条关系。</p>
+</section>
+<section id="library" class="library-layout">
+  <aside class="profile-panel" aria-labelledby="profile-title">
+    <h2 id="profile-title">个人画像</h2>
+    <p class="hint">生成时，会把近期记忆的文字摘录发送给 DeepSeek。</p>
+    <button id="generate-personal-portrait" class="secondary" type="button">生成近况速览</button>
+    <div id="personal-portrait" class="portrait-note" role="status" hidden></div>
+    <details class="hint"><summary>查看最近的记忆片段</summary><div id="profile-groups"></div></details>
+  </aside>
+  <div class="library-results">
+    <form id="memory-search" class="searchbar">
+      <input id="search" type="search" placeholder="输入关键词，或问：我上次记了什么茶？" aria-label="搜索记忆" enterkeyhint="search">
+      <button type="submit">按意思搜</button>
+      <button id="refresh" class="secondary" type="button">刷新</button>
+    </form>
+    <div class="section-heading"><h2>你的记忆 <span id="count"></span></h2><a href="/api/export" download>导出文字索引</a></div>
+    <p id="memory-search-status" class="hint" role="status" hidden></p>
+    <div id="items"></div>
+  </div>
+</section>
+<section id="capture" class="panel" hidden>
+  <h2>留下一条记忆</h2>
+    <p>内容保存在你的 Windows 电脑。图片 OCR 和 PDF 提取在电脑本地完成。分类置信度不足时，会将该条正文和备注发送给 DeepSeek 复判。</p>
+  <form id="capture-form">
+    <div class="photo-upload">
+      <label for="file">选择图片或文件（可选）</label>
+      <p class="hint">可从相册或文件中选择一个附件，最多 20 MB。支持的图片和 PDF 会在电脑上提取文字。</p>
+      <input id="file" type="file">
+      <img id="photo-preview" alt="待上传图片预览" hidden>
+      <p id="photo-description" class="hint"></p>
+    </div>
+    <label for="title">标题（可选）</label>
+    <input id="title" maxlength="300" placeholder="给这条记忆起个名字">
+    <label for="text">文字或链接</label>
+    <textarea id="text" rows="5" maxlength="200000" placeholder="粘贴你想记住的内容…"></textarea>
+    <label for="note">为什么想记住它？</label>
+    <textarea id="note" rows="2" maxlength="10000" placeholder="例如：下次和朋友去"></textarea>
+    <p class="hint">链接保存地址，不自动读取登录页面。文件和 OCR 结果可在详情中核对。</p>
+    <button id="save">保存记忆</button>
+  </form>
+</section>
+<section id="guide" class="panel" hidden>
+  <h2>从 iPhone 分享到 PocketMemory</h2>
+  <p>用 iPhone 打开此页以获取接收地址。分享时，手机和运行 PocketMemory 的电脑须连接同一可信 Wi-Fi。</p>
+  <label for="endpoint">快捷指令接收地址</label>
+  <input id="endpoint" readonly>
+  <h3>用同一条快捷指令分享图片、链接或文字</h3>
+  <ol>
+    <li>新建「存到 PocketMemory」。点编辑器底部的 ⓘ，打开「在共享表单中显示」。回到顶部「接收」，勾选 URL、文本、图像、PDF 和文件。</li>
+    <li>添加「Base64 编码」，动作选「编码」，输入选「快捷指令输入」。</li>
+    <li>添加一张「获取 URL 内容」卡片，地址填上方接收地址，方法选 <code>POST</code>。标头名填 <code>Authorization</code>，值填 <code>Bearer 你的个人访问密钥</code>，保留中间的空格。</li>
+    <li>请求体选「JSON」，添加文本字段 <code>shared_base64</code>，值选「Base64 编码」输出。可添加「显示结果」，输入选「URL 的内容」。</li>
+    <li>每次分享一项。先从截图预览分享一张图，再从 Safari 分享一个链接，到「记忆库」确认。分享文件时，另加 JSON 字段 <code>name</code> 可传入原文件名。</li>
+  </ol>
+  <details>
+  <summary>单独配置照片、文件或链接的上传方式</summary>
+  <h3>单张照片或截图</h3>
+  <label for="image-endpoint">图片接收地址</label>
+  <input id="image-endpoint" readonly>
+  <ol>
+    <li>新建「存图片到 PocketMemory」。在编辑器底部点 ⓘ，开启「在共享表单中显示」，接收类型选择图像。</li>
+    <li>添加「获取 URL 内容」，填图片接收地址，方法选 <code>POST</code>。添加标头 <code>Authorization</code>，值填 <code>Bearer 你的个人访问密钥</code>，中间保留一个空格。</li>
+    <li>请求体选「文件」，值选「快捷指令输入」。添加「显示结果」，输入选「URL 的内容」。</li>
+    <li>在截图预览或「照片」里打开一张图，点「分享」，选「存图片到 PocketMemory」。</li>
+  </ol>
+  <h3>PDF、其他文件或多张照片</h3>
+  <ol>
+    <li>在 iPhone 的「快捷指令」中新增「存到 PocketMemory」。打开快捷指令详情里的「在共享表单中显示」，接收类型选择图像、PDF 和文件。</li>
+    <li>添加「重复每一项」，输入选「快捷指令输入」。把「获取 URL 内容」放在循环里，填上方接收地址，再把方法设为 <code>POST</code>。</li>
+    <li>添加标头 <code>Authorization</code>，值填 <code>Bearer 你的个人访问密钥</code>，中间保留一个空格。</li>
+    <li>请求体选「表单」，添加名为 <code>file</code> 的字段，类型选「文件」，值选「重复项目」。</li>
+    <li>在循环里添加「获取词典值」，从「URL 的内容」读取 <code>message</code>，再用「显示结果」显示它。</li>
+    <li>打开「照片」，选一张截图，点「分享」并向下滚动，选择「存到 PocketMemory」。首次运行时允许连接电脑。收到保存成功提示后，到「记忆库」查看。</li>
+  </ol>
+  <h3>Safari 链接和选中的文字</h3>
+  <p>另建「链接或文字 → PocketMemory」，打开「在共享表单中显示」，输入类型选 URL 和文本。先用「获取输入中的文本」读取快捷指令输入，再向同一地址发 <code>POST</code>，使用同一 <code>Authorization</code> 标头。请求体选 JSON，添加 <code>text</code> 字段，值选转换后的文本。用「获取词典值」读取并显示返回的 <code>message</code>。</p>
+  </details>
+  <p class="hint">若分享菜单里没看到快捷指令，检查快捷指令的输入类型与当前分享内容是否匹配。每位用户填写自己的个人密钥。</p>
+  <h3>连接不上？</h3>
+  <p>确认电脑没休眠、地址没有变化、手机没有使用访客 Wi-Fi。Windows 防火墙如果询问，只允许 Python 访问“专用网络”。当前局域网 HTTP 没有传输加密。</p>
+</section>
+</div><footer>POCKETMEMORY · 你的内容，你来保留。</footer>
+<div id="status" role="status" aria-live="polite" hidden></div>
+<dialog id="detail"><div class="detail-head"><span class="eyebrow">记忆详情</span><button id="close" class="secondary">关闭</button></div><h2 id="detail-title"></h2><p id="detail-date" class="hint"></p><p id="detail-status" class="hint"></p><p id="detail-classification" class="hint"></p><button id="classify" class="secondary" hidden>运行本地分类</button><p id="detail-graph-status" class="hint"></p><button id="graph-sync" class="secondary" hidden>同步到个人图</button><pre id="detail-note"></pre><pre id="detail-text"></pre><div id="detail-links"></div><button id="delete" class="danger">删除这条记忆及原件</button></dialog>
+</main></body></html>
