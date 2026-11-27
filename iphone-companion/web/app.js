@@ -21,7 +21,9 @@ function clearPrivateUI() {
   authGeneration++; requestNumber++; current = null; signedInRole = null;
   $('detail').close(); $('capture-form').reset(); clearPhoto();
   for (const id of ['items', 'profile-groups', 'graph-canvas', 'graph-list', 'users-list', 'detail-links', 'graph-scope']) $(id).replaceChildren();
-  for (const id of ['detail-title', 'detail-text', 'detail-note', 'detail-date', 'detail-status', 'graph-detail', 'graph-status', 'account-name']) $(id).textContent = '';
+  for (const id of ['detail-title', 'detail-text', 'detail-note', 'detail-date', 'detail-status', 'detail-source-app',
+    'detail-classification', 'detail-extraction-body', 'detail-ocr-lines', 'feedback-status', 'graph-detail', 'graph-status', 'account-name']) $(id).textContent = '';
+  $('feedback-form').reset();
   $('new-user-key').value = ''; $('user-credential').hidden = true; $('tab-admin').hidden = true;
   $('tab-experiment').hidden = true;
   $('tab-experiment-search').hidden = true;
@@ -87,6 +89,8 @@ async function openWorkspace() {
 }
 function kind(item) { return item.url ? '链接' : item.mime.startsWith('image/') ? '图片' : item.name ? '文件' : '文字'; }
 const routeNames = { semantic: '语义', episodic: '事件', procedural: '方法与流程' };
+function memoryLabels(result) { return result?.labels ?? (result?.label ? [result.label] : []); }
+function memoryPreview(item) { return item.feedback?.text || item.draft?.summary || item.text; }
 function renderProfile(profile = {}) {
   const groups = $('profile-groups');
   groups.replaceChildren();
@@ -110,7 +114,7 @@ function renderProfile(profile = {}) {
       section.append(empty);
     }
     for (const item of records) {
-      const source = [item.note, item.text].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+      const source = [item.note, memoryPreview(item)].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'profile-source';
@@ -131,8 +135,9 @@ function classificationText(result) {
   if (!result) return '尚未分类';
   if (result.status === 'failed') return '本地分类暂不可用，已保留原文，可重试';
   if (result.status === 'skipped') return '没有可分类的正文';
-  const route = routeNames[result.label] || '无长期记忆类别';
+  const route = memoryLabels(result).map(label => routeNames[label]).filter(Boolean).join(' · ') || '无长期记忆类别';
   const working = result.working_state ? ' · 工作状态' : '';
+  if (result.source === 'user') return `${route}${working} · 你已确认`;
   if (result.source === 'deepseek') return `${route}${working} · DeepSeek 复判${result.uncertain ? ' · 仍不确定，暂不自动同步' : ''}`;
   const confidence = Math.round(result.confidence * 100);
   return `${route}${working} · ${confidence}%${result.uncertain ? ' · 低置信度' : ''}${result.fallback_status === 'failed' ? ' · DeepSeek 复判失败，可重试' : ''}`;
@@ -160,7 +165,7 @@ async function reload() {
     for (const item of data.items) {
       const button = document.createElement('button'); button.className = 'card';
       const badge = processingNames[item.processing] || (item.classification?.status === 'classified' ? kind(item) + ' · ' + classificationText(item.classification) : kind(item));
-      for (const [tag, text, cls] of [['span', badge, 'kind'], ['strong', item.title, ''], ['p', item.note || item.text || item.status, ''], ['time', new Date(item.created).toLocaleString(), '']]) {
+      for (const [tag, text, cls] of [['span', badge, 'kind'], ['strong', item.title, ''], ['p', item.note || memoryPreview(item) || item.status, ''], ['time', new Date(item.created).toLocaleString(), '']]) {
         const element = document.createElement(tag); element.textContent = text; element.className = cls; button.append(element);
       }
       button.onclick = () => detail(item); $('items').append(button);
@@ -176,27 +181,95 @@ async function reload() {
     notice(error.message);
   }
 }
+function renderOCR(blocks = []) {
+  $('detail-ocr').hidden = !blocks.length;
+  $('detail-ocr-lines').textContent = blocks.map(line => {
+    const page = line.page ? `第 ${line.page} 页 · ` : '';
+    const score = line.confidence == null ? '' : `${Math.round(line.confidence * 100)}% · `;
+    return `${page}${score}${line.accepted ? '' : '待核对 · '}${line.text}`;
+  }).join('\n');
+}
+const additionalLabels = Array.from($('feedback-additional').querySelectorAll('input'));
+function updateAdditionalLabels(labels) {
+  const primary = $('feedback-label').value;
+  for (const choice of additionalLabels) {
+    choice.disabled = !primary || choice.value === primary;
+    choice.checked = !choice.disabled && (labels ? labels.includes(choice.value) : choice.checked);
+  }
+}
+$('feedback-label').onchange = () => updateAdditionalLabels();
 function detail(item) {
+  const newRecord = !$('detail').open || current?.id !== item.id;
+  const extractionComplete = !newRecord && !current.draft && item.draft;
+  if (newRecord) {
+    $('feedback-panel').open = false;
+    $('feedback-status').textContent = '';
+    $('detail-ocr').open = false;
+    $('detail-extraction').open = false;
+    renderOCR();
+  }
   current = item;
+  if (newRecord || !$('feedback-panel').open) {
+    $('feedback-label').value = item.classification?.label || '';
+    updateAdditionalLabels(memoryLabels(item.classification));
+    $('feedback-working').value = String(Boolean(item.classification?.working_state));
+    $('feedback-text').value = item.feedback?.text || '';
+  }
   $('detail-title').textContent = item.title;
   $('detail-date').textContent = '保存时间 ' + new Date(item.created).toLocaleString();
+  $('detail-source-app').textContent = '来源 App · ' + (item.source_app || '未提供');
   $('detail-status').textContent = processingNames[item.processing] || item.status; $('detail-note').textContent = item.note; $('detail-note').hidden = !item.note;
   $('detail-classification').textContent = 'HGP 分类 · ' + classificationText(item.classification);
   const retryReview = item.classification?.uncertain && item.classification?.fallback_status !== 'reviewed';
   $('classify').hidden = item.processing !== 'failed' && (['extract', 'queued', 'classifying', 'syncing'].includes(item.processing) || Boolean(item.classification && item.classification.status !== 'failed' && !retryReview));
   const result = item.classification;
-  const eligible = result?.status === 'classified' && !result.uncertain && ['semantic', 'episodic'].includes(result.label);
+  const eligible = result?.status === 'classified' && !result.uncertain
+    && memoryLabels(result).some(label => label === 'semantic' || label === 'episodic');
   $('detail-graph-status').textContent = item.graph_state === 'synced' ? '已写入个人 Neo4j 图'
-    : item.graph_state === 'pending' ? 'Neo4j 同步待重试'
+    : ['pending', 'remove_pending'].includes(item.graph_state) ? 'Neo4j 同步待重试'
     : result?.uncertain ? '分类置信度低，暂留在记忆库'
     : eligible ? '可同步到个人 Neo4j 图' : '';
-  $('graph-sync').hidden = !eligible || item.graph_state === 'synced';
-  $('detail-text').textContent = item.text || '暂无可检索正文，可打开原件查看。'; $('detail-links').replaceChildren();
+  $('graph-sync').hidden = item.graph_state !== 'remove_pending' && (!eligible || item.graph_state === 'synced');
+  const preview = memoryPreview(item);
+  const extracted = item.draft?.body || '';
+  $('detail-text').textContent = preview || '暂无可检索正文，可打开原件查看。';
+  $('detail-extraction').hidden = !extracted || extracted === preview;
+  $('detail-extraction-body').textContent = $('detail-extraction').hidden ? '' : extracted;
+  $('detail-links').replaceChildren();
   if (item.url && /^https?:\/\//i.test(item.url)) { const a = document.createElement('a'); a.href = item.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = '打开来源链接 ↗'; $('detail-links').append(a); }
   if (item.name) { const a = document.createElement('a'); a.href = '/api/files/' + item.id; a.download = item.name; a.textContent = '下载原件 ↗'; $('detail-links').append(a); }
   if (!$('detail').open) $('detail').showModal();
+  if (item.ocr) renderOCR(item.ocr);
+  else if (item.name && (newRecord || extractionComplete)) {
+    api('/api/memories/' + item.id).then(({ item: complete }) => {
+      if ($('detail').open && current?.id === item.id && complete.ocr) renderOCR(complete.ocr);
+    }).catch(() => {});
+  }
 }
 $('close').onclick = () => $('detail').close();
+$('feedback-form').onsubmit = async event => {
+  event.preventDefault();
+  if (!current) return;
+  const id = current.id;
+  const payload = { label: $('feedback-label').value || null,
+    additional_labels: additionalLabels.filter(choice => choice.checked).map(choice => choice.value),
+    working_state: $('feedback-working').value === 'true', text: $('feedback-text').value };
+  $('feedback-save').disabled = true;
+  $('feedback-status').textContent = '正在保存更正…';
+  try {
+    const { item } = await api('/api/memories/' + id + '/feedback', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if ($('detail').open && current?.id === id) {
+      detail(item);
+      $('feedback-status').textContent = '已保存更正并更新归类。';
+    }
+    resetPersonalPortrait();
+    await reload();
+    if (!$('graph').hidden) await loadGraph();
+  } catch (error) {
+    if ($('detail').open && current?.id === id) $('feedback-status').textContent = error.message;
+  } finally { $('feedback-save').disabled = false; }
+};
 $('graph-sync').onclick = async () => {
   if (!current) return;
   const id = current.id;
@@ -226,7 +299,7 @@ $('capture-form').onsubmit = async event => {
   event.preventDefault(); const file = $('file').files[0];
   if (file && file.size > 20 * 1024 * 1024) return notice('单个文件不能超过 20 MB');
   if (!file && !$('text').value.trim()) return notice('请填写文字或选择文件');
-  const form = new FormData(); for (const key of ['title', 'text', 'note']) form.set(key, $(key).value);
+  const form = new FormData(); for (const key of ['title', 'text', 'note', 'source_app']) form.set(key, $(key).value);
   if (file) form.set('file', file);
   $('save').disabled = true; $('save').textContent = '正在上传并保存…';
   try { const result = await api('/api/memories', { method: 'POST', body: form }); $('capture-form').reset(); clearPhoto(); tab('library'); $('search').value = ''; semanticQuery = ''; await reload(); resetPersonalPortrait(); notice(result.message); detail(result.item); }
@@ -317,6 +390,7 @@ async function loadGraph(reset = false) {
         $('graph-detail').textContent = [
           fields.title || fields.name || node.label,
           date,
+          fields.source_app ? '来源 App · ' + fields.source_app : '',
           content && content !== node.label ? content : '',
           related.length ? '关联记忆\n' + related.join('\n') : '',
         ].filter(Boolean).join('\n\n');
@@ -474,7 +548,7 @@ async function loadExperimentUsers(selectId, statusId) {
   try {
     const { users, names = {} } = await api('/api/admin/experiment-profile');
     select.replaceChildren(new Option('请选择评测用户', ''));
-    users.forEach((user, index) => select.add(new Option(names[user] || '评测用户 ' + (index + 1), user)));
+    users.forEach(user => select.add(new Option(names[user] || user, user)));
     $(statusId).textContent = users.length ? '' : '未找到评测记录';
     if (selectId !== 'experiment-search-user' && users.length) {
       select.value = selectId === 'workflow-user' && users.includes($('experiment-user').value)

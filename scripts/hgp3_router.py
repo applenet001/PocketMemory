@@ -33,8 +33,6 @@ class AdaptiveRouter:
 
         self.classifier, self.data = Path(classifier), Path(data)
         self.state_path = Path(state) if state is not None else None
-        if adaptive and self.state_path is None:
-            raise ValueError('Adaptive routing requires a state path')
         self.fallback = fallback
         self.tau0, self.tau_min, self.beta = tau0, tau_min, beta
         self.batch_size, self.adaptive = batch_size, adaptive
@@ -127,10 +125,11 @@ class AdaptiveRouter:
     def _save(self, state):
         import torch
 
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.state_path.with_suffix('.tmp')
-        torch.save(state, temporary)
-        temporary.replace(self.state_path)
+        if self.state_path is not None:
+            self.state_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.state_path.with_suffix('.tmp')
+            torch.save(state, temporary)
+            temporary.replace(self.state_path)
         self.state = state
 
     def observe(self, message, result, vector):
@@ -152,13 +151,19 @@ class AdaptiveRouter:
             self.update()
 
     def update(self):
+        if not self.adaptive or not self.state['pending']:
+            return
+        examples = self.state['history'] + self.state['pending']
+        weights = self.fit_heads(examples)
+        self._save(dict(self.state, iteration=self.state['iteration'] + 1, weights=weights,
+                        pending=[], history=examples))
+        self.head = weights
+
+    def fit_heads(self, examples):
         import numpy as np
         import torch
         from sklearn.linear_model import LogisticRegression
 
-        examples = self.state['history'] + self.state['pending']
-        if not self.adaptive or not self.state['pending']:
-            return
         x = np.vstack([self.base_vectors, *(r['vector'].numpy() for r in examples)])
         routes = self.base_labels + [r['label'] for r in examples]
         working = self.base_work + [r['working_state'] for r in examples]
@@ -172,6 +177,4 @@ class AdaptiveRouter:
             head.fit(features, targets)
             weights[f'{name}.weight'] = torch.as_tensor(head.coef_, dtype=torch.float32)
             weights[f'{name}.bias'] = torch.as_tensor(head.intercept_, dtype=torch.float32)
-        self._save(dict(self.state, iteration=self.state['iteration'] + 1, weights=weights,
-                        pending=[], history=examples))
-        self.head = weights
+        return weights

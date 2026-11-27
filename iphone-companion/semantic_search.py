@@ -3,6 +3,7 @@ from functools import lru_cache
 import sys
 
 from classifier import ENCODER, ROOT
+from memory_draft import memory_body
 
 
 MAX_QUERY_LENGTH = 300
@@ -41,8 +42,8 @@ def search_meaning(items, query):
 
     ranked = []
     for item in items:
-        heading = '\n'.join(part for part in (item['title'], item['note']) if part)
-        body = item['text']
+        heading = '\n'.join(part for part in (item['title'], item['note'], item.get('source_app')) if part)
+        body = memory_body(item)
         if heading or body:
             similarity = float((_record_vectors(heading, body) @ query_vector).max())
             if similarity >= MIN_SIMILARITY:

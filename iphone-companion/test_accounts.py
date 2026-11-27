@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -56,6 +57,48 @@ class MultiUserTests(unittest.TestCase):
                                       graph_namespace(self.a['id']), self.owner_key)[0], 403)
         self.assertTrue(self.request(memory, self.key_a, method='DELETE')[1]['deleted'])
         self.upload_graph.delete_upload.assert_called_once_with(graph_namespace(self.a['id']), upload['item']['id'])
+
+    def test_label_feedback_replans_memory_and_is_idempotent(self):
+        _, upload, _ = self.request('/api/memories', self.key_a, {'text': 'Event', 'source_app': 'Safari'})
+        identity = upload['item']['id']
+        path = '/api/memories/' + identity + '/feedback'
+        correction = {'label': 'semantic', 'working_state': False, 'text': 'I prefer tea.'}
+        self.assertEqual(self.request(path, self.key_b, correction)[0], 404)
+        status, data, _ = self.request(path, self.key_a, correction)
+        self.assertEqual(status, 200)
+        self.assertEqual(data['item']['classification']['source'], 'user')
+        self.assertEqual(data['item']['classification']['label'], 'semantic')
+        self.assertEqual(data['item']['graph_state'], 'synced')
+        self.assertEqual(self.upload_graph.write_upload.call_count, 2)
+        self.assertEqual(self.request(path, self.key_a, correction)[1]['item']['feedback']['revision'], 1)
+        self.assertEqual(self.upload_graph.write_upload.call_count, 2)
+
+        correction.update(label='procedural', working_state=True)
+        self.upload_graph.delete_upload.side_effect = RuntimeError('offline')
+        item = self.request(path, self.key_a, correction)[1]['item']
+        self.assertEqual(item['feedback']['revision'], 2)
+        self.assertEqual(item['graph_state'], 'remove_pending')
+        data = self.request('/api/workflows', self.key_a)[1]
+        self.assertEqual(data['procedural'][0]['source_text'], correction['text'])
+        self.assertEqual(data['working'][0]['nodes'][0]['upload_id'], identity)
+        self.upload_graph.delete_upload.side_effect = None
+        self.assertIsNone(self.request('/api/memories/' + identity + '/graph-sync', self.key_a, method='POST')[1]['item']['graph_state'])
+        self.assertEqual(self.upload_graph.delete_upload.call_args.args, (graph_namespace(self.a['id']), identity))
+
+    def test_additional_labels_share_a_single_memory_across_views(self):
+        _, upload, _ = self.request('/api/memories', self.key_a, {'text': 'Event'})
+        identity = upload['item']['id']
+        payload = {'label': 'procedural', 'additional_labels': ['semantic', 'episodic'],
+                   'working_state': False}
+        status, data, _ = self.request('/api/memories/' + identity + '/feedback', self.key_a, payload)
+        self.assertEqual(status, 200)
+        self.assertEqual(data['item']['classification']['labels'], ['procedural', 'semantic', 'episodic'])
+        self.assertEqual(data['item']['graph_state'], 'synced')
+        library = self.request('/api/memories', self.key_a)[1]
+        self.assertEqual(len(library['items']), 1)
+        for kind in ('semantic', 'episodic', 'procedural'):
+            self.assertEqual(library['profile'][kind][0]['id'], identity)
+        self.assertEqual(self.request('/api/workflows', self.key_a)[1]['procedural'][0]['upload_id'], identity)
 
     def test_profile_uses_only_personal_records_and_survives_search(self):
         for text in ('Old rule', 'Next rule', 'Recent rule', 'Latest rule', 'Working only'):
@@ -145,14 +188,25 @@ class MultiUserTests(unittest.TestCase):
 
     def test_experiment_profile_is_admin_only_and_requires_one_user(self):
         path = '/api/admin/experiment-profile'
-        with patch('server.evaluated_users', return_value=['experiment-a', 'experiment-b']), \
+        run = self.root / 'experiment'
+        users = ['mobilemem-person_alpha', 'mobilemem-person_beta']
+        for user in users:
+            folder = run / user
+            folder.mkdir(parents=True)
+            (folder / 'episodes.jsonl').write_text('\n'.join(json.dumps({'metadata': metadata}) for metadata in (
+                {'role': 'assistant', 'name': 'Assistant'}, {'role': 'user', 'name': 'Archive Name'},
+            )), encoding='utf-8')
+        dataset = [{'person': {'id': 'person_alpha', 'personname': 'Dataset Name'}}]
+        with patch('experiment_profile.RUN', run), patch('experiment_profile.dataset_samples', return_value=dataset), \
                 patch('server.read_profile', return_value={'semantic': []}) as read:
             self.assertEqual(self.request(path, self.key_a)[0], 403)
-            self.assertEqual(self.request(path + '?user=experiment-a', self.key_a)[0], 403)
-            self.assertEqual(self.request(path, self.owner_key)[1]['users'], ['experiment-a', 'experiment-b'])
+            self.assertEqual(self.request(path + '?user=' + users[0], self.key_a)[0], 403)
+            self.assertEqual(self.request(path, self.owner_key)[1], {
+                'users': users, 'names': {users[0]: 'Dataset Name', users[1]: 'Archive Name'},
+            })
             read.assert_not_called()
-            self.assertEqual(self.request(path + '?user=experiment-b', self.owner_key)[0], 200)
-            read.assert_called_once_with('experiment-b')
+            self.assertEqual(self.request(path + '?user=' + users[1], self.owner_key)[0], 200)
+            read.assert_called_once_with(users[1])
 
     def test_experiment_search_is_admin_only_and_requires_user_and_query(self):
         path = '/api/admin/experiment-search'
@@ -174,6 +228,46 @@ class MultiUserTests(unittest.TestCase):
             view.assert_not_called()
             self.assertEqual(self.request(path, self.owner_key)[0], 200)
             view.assert_called_once_with('episodic', 'scope-a', allowed_namespace='scope-a')
+
+    def test_experiment_graph_generates_missing_config_from_verified_episodes(self):
+        run = self.root / 'experiment'
+        user = 'mobilemem-person_archive'
+        folder = run / user
+        folder.mkdir(parents=True)
+        path = run / 'live-config.json'
+        scope = 'hgp_' + 'a' * 64
+        source = 'archived-message'
+        episode_id = hashlib.sha256(json.dumps((scope, source)).encode()).hexdigest()
+        (folder / 'episodes.jsonl').write_text(json.dumps({
+            'id': episode_id, 'metadata': {'source_message_id': source},
+        }) + '\n', encoding='utf-8')
+        url = '/api/graph?database=episodic&user=' + user
+        with patch('experiment_profile.RUN', run), \
+                patch('server.LocalGraph.experiment_episode_scopes') as lookup, \
+                patch('server.LocalGraph.connection_settings', return_value=('bolt://localhost:7688', 'test', 'secret')), \
+                patch('server.LocalGraph.view', return_value={'nodes': [], 'edges': []}) as view:
+            self.assertEqual(self.request(url, self.key_a)[0], 403)
+            lookup.assert_not_called()
+            lookup.return_value = [{'episode_id': episode_id, 'scope': 'hgp_' + 'b' * 64}]
+            self.assertEqual(self.request(url, self.owner_key)[0], 503)
+            self.assertFalse(path.exists())
+
+            lookup.return_value.append({'episode_id': episode_id, 'scope': scope})
+            self.assertEqual(self.request(url, self.owner_key)[0], 200)
+            view.assert_called_once_with('episodic', scope, allowed_namespace=scope)
+            contents = path.read_text(encoding='utf-8')
+            config = json.loads(contents)
+            self.assertEqual(config['graph_scopes'], {user: scope})
+            self.assertEqual(config['neo4j_uri'], 'bolt://localhost:7688')
+            self.assertEqual(config['update_batch_size'], 100)
+            for key in ('adaptive_updates', 'allow_llm_fallback', 'allow_llm_extraction'):
+                self.assertIs(config[key], True)
+            self.assertNotIn('secret', contents)
+
+            lookup.reset_mock()
+            self.assertEqual(self.request(url, self.owner_key)[0], 200)
+            lookup.assert_not_called()
+            self.assertEqual(path.read_text(encoding='utf-8'), contents)
 
     def test_portrait_only_uses_selected_account_memories(self):
         self.request('/api/memories', self.key_a, {'text': 'Alice is trying oolong tea'})

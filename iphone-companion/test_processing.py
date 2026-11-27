@@ -1,6 +1,7 @@
 import base64
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import tempfile
 import threading
 import time
@@ -9,10 +10,40 @@ from urllib.request import Request, urlopen
 from unittest.mock import Mock
 
 from local_memory import LocalMemories
+from memory_draft import ocr_lines
 from server import Store, make_server
 
 
 class ProcessingTests(unittest.TestCase):
+    def test_ocr_draft_excludes_garble_but_retains_raw_lines(self):
+        blocks = ocr_lines(SimpleNamespace(txts=['Boarding at 7:15', '\ufffd\ufffd?', 'Garbled'],
+                                           boxes=[[[1, 2], [3, 4]]] * 3, scores=[.98, .99, .55]))
+        with tempfile.TemporaryDirectory() as folder:
+            store = Store(folder)
+            with unittest.mock.patch.object(store, 'extract', return_value=('Boarding at 7:15', 'OCR', blocks)):
+                item, _ = store.add(name='flight.png', content=b'image', source_app='Safari')
+            item = Store(folder).get(item['id'], detail=True)
+            self.assertEqual(item['draft']['summary'], 'Boarding at 7:15')
+            self.assertEqual(item['source_app'], 'Safari')
+            self.assertEqual([line['accepted'] for line in item['ocr']], [True, False, False])
+            self.assertEqual(item['ocr'][2]['text'], 'Garbled')
+            self.assertEqual(item['ocr'][0]['box'], [[1, 2], [3, 4]])
+
+    def test_file_without_text_can_become_a_training_example(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = Store(folder)
+            item, _ = store.add(name='clip.bin', content=b'\x00\x01', source_app='Files')
+            self.assertEqual(item['draft']['status'], 'source_only')
+            self.assertEqual(store.get(item['id'], file=True)['content'], b'\x00\x01')
+            feedback = {'label': 'episodic', 'working_state': False, 'text': ''}
+            store.record_feedback(item['id'], feedback)
+            self.assertEqual(store.feedback_examples(), ())
+            feedback['text'] = 'Signed the lease on Friday.'
+            store.record_feedback(item['id'], feedback)
+            self.assertEqual(Store(folder).feedback_examples(), ((feedback['text'], 'episodic', False),))
+            store.delete(item['id'])
+            self.assertEqual(store.feedback_examples(), ())
+
     def test_upload_returns_before_extraction_and_classification_then_persists(self):
         with tempfile.TemporaryDirectory() as folder:
             store = Store(folder)
@@ -21,7 +52,7 @@ class ProcessingTests(unittest.TestCase):
             def extract(content, name):
                 started.set()
                 release.wait(5)
-                return content.decode(), 'extracted'
+                return content.decode(), 'extracted', []
 
             store.extract = extract
             classifier = Mock(return_value={'status': 'classified', 'label': 'procedural',

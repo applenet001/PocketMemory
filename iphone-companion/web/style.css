@@ -66,6 +66,10 @@ select{font:inherit;width:100%;padding:12px;border:1px solid #d9dfd5;border-radi
 
 .experiment-flow > summary { font-weight: 650; cursor: pointer; }
 .experiment-flow label select { display: block; margin-top: 6px; }
+#feedback-additional { margin: 16px 0 0; border: 1px solid #d9dfd5; border-radius: 10px; }
+#feedback-additional legend { font-size: 14px; padding: 0 6px; }
+#feedback-additional label { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 0; }
+#feedback-additional input { width: 18px; height: 18px; accent-color: #254f3d; }
 .flow-sequence { list-style: none; padding: 0; margin: 10px 0 0; }
 .flow-sequence > li { padding: 0; }
 .flow-box { background: #fff; border: 1px solid #d7e2d6; border-radius: 10px; padding: 12px; margin: 0; }

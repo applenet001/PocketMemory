@@ -63,15 +63,26 @@ class CompanionTests(unittest.TestCase):
         self.assertEqual(self.store.list(), [])
 
     def test_shortcut_multipart_and_file_auth(self):
-        body = b'--boundary\r\nContent-Disposition: form-data; name="file"; filename="../../notes.txt"\r\nContent-Type: text/plain\r\n\r\nremember the library\r\n--boundary--\r\n'
+        body = (b'--boundary\r\nContent-Disposition: form-data; name="source_app"\r\n\r\nNotes\r\n'
+                b'--boundary\r\nContent-Disposition: form-data; name="file"; filename="../../notes.txt"\r\n'
+                b'Content-Type: text/plain\r\n\r\nremember the library\r\n--boundary--\r\n')
         status, result = self.request('/api/memories', body, headers={'Content-Type': 'multipart/form-data; boundary=boundary'})
         self.assertEqual(status, 201)
         item = result['item']
         self.assertEqual(item['name'], 'notes.txt')
+        self.assertEqual(item['source_app'], 'Notes')
         self.assertIn('library', item['text'])
         self.assertEqual(self.request('/api/files/' + item['id'], auth=False)[0], 401)
         self.assertEqual(self.request('/api/files/' + item['id'])[1], b'remember the library')
         self.assertFalse((Path(self.temp.name).parent / 'notes.txt').exists())
+
+    def test_shortcut_multipart_link_without_base64(self):
+        body = (b'--boundary\r\nContent-Disposition: form-data; name="text"\r\n\r\nhttps://example.com\r\n'
+                b'--boundary\r\nContent-Disposition: form-data; name="source_app"\r\n\r\nSafari\r\n--boundary--\r\n')
+        status, result = self.request('/api/memories', body, headers={'Content-Type': 'multipart/form-data; boundary=boundary'})
+        self.assertEqual(status, 201)
+        self.assertEqual(result['item']['url'], 'https://example.com')
+        self.assertEqual(result['item']['source_app'], 'Safari')
 
     def test_reject_empty_and_invalid_base64(self):
         self.assertEqual(self.request('/api/memories', {})[0], 400)
@@ -105,7 +116,7 @@ class CompanionTests(unittest.TestCase):
         status, result = self.request(path, b'', method='POST')
         self.assertEqual(status, 400)
         self.assertIn('快捷指令输入', result.decode('utf-8'))
-        with patch.object(Store, 'extract', return_value=('行程', '图片已保存')):
+        with patch.object(Store, 'extract', return_value=('行程', '图片已保存', [])):
             status, result = self.request(path, screenshot, headers={'Content-Type': 'application/octet-stream'})
             self.assertEqual(status, 201)
             self.assertEqual(result.decode('utf-8'), '已保存到 PocketMemory')
@@ -122,7 +133,7 @@ class CompanionTests(unittest.TestCase):
         text = '携程行程\n周六全家出发 👨‍👩‍👧'
         screenshot = b'\x89PNG\r\n\x1a\nimage bytes'
         for content in (link.encode(), text.encode(), screenshot):
-            with self.subTest(content=content), patch.object(Store, 'extract', return_value=('截图正文', '图片已保存')):
+            with self.subTest(content=content), patch.object(Store, 'extract', return_value=('截图正文', '图片已保存', [])):
                 status, result = self.request(path, {'shared_base64': base64.encodebytes(content).decode()})
                 self.assertEqual(status, 201)
                 self.assertEqual(result.decode(), '已保存到 PocketMemory')
@@ -178,14 +189,18 @@ class CompanionTests(unittest.TestCase):
         item, _ = self.store.add(content=output.getvalue(), name='test.pdf')
         self.assertIn('PocketMemory PDF evidence', item['text'])
 
-    def test_image_ocr(self):
+    def test_image_and_scanned_pdf_ocr(self):
         from PIL import Image, ImageDraw, ImageFont
         image = Image.new('RGB', (1000, 160), 'white')
-        font = ImageFont.truetype('C:/Windows/Fonts/arial.ttf', 48)
+        font = ImageFont.load_default(size=48)
         ImageDraw.Draw(image).text((30, 45), 'PocketMemory library 2026', fill='black', font=font)
-        output = io.BytesIO(); image.save(output, format='PNG')
-        item, _ = self.store.add(content=output.getvalue(), name='test.png')
-        self.assertIn('library', item['text'].lower(), item['status'])
+        for format, page in [('PNG', None), ('PDF', 1)]:
+            with self.subTest(format=format):
+                output = io.BytesIO()
+                image.save(output, format=format)
+                item, _ = self.store.add(content=output.getvalue(), name='test.' + format.lower())
+                self.assertIn('library', item['draft']['summary'].lower(), item['status'])
+                self.assertEqual(self.store.get(item['id'], detail=True)['ocr'][0]['page'], page)
 
 
 if __name__ == '__main__':

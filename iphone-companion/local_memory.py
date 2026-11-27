@@ -2,6 +2,7 @@
 import hashlib
 import json
 from pathlib import Path
+from memory_draft import memory_evidence, memory_labels
 
 ROOT = Path(__file__).resolve().parents[1] / 'outputs'
 FILENAMES = {'working': 'state_trajectory.json', 'procedural': 'procedural_rules.jsonl'}
@@ -19,13 +20,13 @@ class LocalMemories:
             if result.get('status') != 'classified' or result.get('uncertain'):
                 continue
             identity = item['id']
-            content = '\n'.join(filter(None, (item['text'], item['note'])))
+            content = memory_evidence(item) or item['title']
             if result.get('working_state'):
                 working[identity] = {'nodes': [{
                     'node_id': identity, 'state_name': item['title'], 'content': content,
                     'timestamp': item['created'], 'source_episode_id': identity,
                     'is_active': True}], 'transitions': []}
-            if result.get('label') == 'procedural':
+            if 'procedural' in memory_labels(result):
                 rules.append({'id': identity, 'title': item['title'], 'source_text': content,
                               'if_conditions': [], 'then_steps': [], 'version': 1,
                               'status': 'source_only', 'valid_from': item['created'],

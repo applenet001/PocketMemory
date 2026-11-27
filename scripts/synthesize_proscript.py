@@ -1,4 +1,4 @@
-"""Rewrite the selected 600 proScript procedures into Chinese dialogue memories.
+"""Rewrite archived proScript candidates into Chinese dialogue memories for HGP3-2200.
 
 Retains parent IDs and splits (480/60/60); no extra training rows are added.
 Outputs are synthetic weak supervision, not human gold. A separate model call
@@ -32,7 +32,8 @@ pass仅当忠实且属于procedural时为true。'''
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--data', type=Path, default=ROOT / 'outputs/hgp3-3000/candidates.jsonl')
+    p.add_argument('--data', type=Path, required=True,
+                   help='Archived candidates.jsonl containing the selected proScript rows and their original splits.')
     p.add_argument('--out', type=Path, default=ROOT / 'outputs/proscript-dialogue-600')
     p.add_argument('--limit', type=int, default=600)
     p.add_argument('--batch-size', type=int, default=5)
@@ -41,6 +42,11 @@ def main():
     a = p.parse_args()
     if min(a.limit, a.batch_size, a.workers) < 1:
         p.error('sizes must be positive')
+    if not a.data.is_file():
+        p.error(f'Candidate file not found: {a.data}')
+    rows = [r for r in read(a.data) if r['source'] == 'proScript'][:a.limit]
+    if not rows:
+        p.error(f'No proScript candidates in {a.data}')
     env = dict(os.environ)
     envfile = ROOT / 'config/local.env'
     if envfile.exists():
@@ -51,7 +57,6 @@ def main():
     if not key:
         raise ValueError('Missing DEEPSEEK_API_KEY')
     a.out.mkdir(parents=True, exist_ok=True)
-    rows = [r for r in read(a.data) if r['source'] == 'proScript'][:a.limit]
     metadata = dict(model=a.model, source_sha256=digest(a.data.read_text(encoding='utf-8')),
                     generate_prompt=GENERATE, verify_prompt=VERIFY)
     cfg = a.out / 'run.json'

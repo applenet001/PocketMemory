@@ -215,12 +215,12 @@ class OriginalHGPLayer(MemBaseLayer):
         self._read_only_search = False
 
     @classmethod
-    def open_for_search(cls, config):
+    def open_for_search(cls, config, *, scope=None):
         """Open an existing run for retrieval without loading the adaptive classifier."""
         layer = cls.__new__(cls)
         layer.config = config
         layer.path = Path(config.save_dir).resolve()
-        layer.scope = 'hgp_' + id_for(config.graph_namespace, config.user_id)
+        layer.scope = scope if scope is not None else 'hgp_' + id_for(config.graph_namespace, config.user_id)
         layer.credentials = configure_original(config, search_only=True)
         layer._stores = {}
         layer._search_memory = None

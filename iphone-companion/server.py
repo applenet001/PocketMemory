@@ -28,16 +28,20 @@ from contextlib import contextmanager
 from graph import LocalGraph, PERSONAL_VIEWS
 from local_memory import LocalMemories
 from accounts import Accounts, graph_namespace
-from experiment_profile import evaluated_user_names, evaluated_users, experiment_namespace, read_profile
+from experiment_profile import (ExperimentConfigUnavailable, evaluated_user_names, evaluated_users,
+                                experiment_namespace, read_profile)
 from portrait import experiment_evidence, generate_portrait, personal_evidence
 from experiment_answer import SearchAnswers, answer_question
 from semantic_search import MAX_QUERY_LENGTH, search_meaning
+from memory_draft import (MEMORY_LABELS, make_draft, memory_body, memory_evidence, memory_labels,
+                          ocr_lines, readable_lines)
+from classifier import InboxClassifier
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / 'vendor'))
 MAX_BODY = 30 * 1024 * 1024
 MAX_FILE = 20 * 1024 * 1024
-MEMORY_COLUMNS = 'id,created,title,text,note,url,name,mime,status,classification,graph_state,processing'
+MEMORY_COLUMNS = 'id,created,title,text,note,url,name,mime,status,classification,graph_state,processing,source_app,draft,feedback'
 
 
 def shared_image_name(content):
@@ -89,9 +93,10 @@ class Store:
             db.execute('CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, created TEXT, title TEXT, text TEXT, note TEXT, url TEXT, name TEXT, mime TEXT, status TEXT, digest TEXT UNIQUE, content BLOB)')
             db.execute('BEGIN IMMEDIATE')
             columns = {column['name'] for column in db.execute('PRAGMA table_info(memories)')}
-            for column in ('classification', 'graph_state', 'processing'):
+            for column in ('classification', 'graph_state', 'processing', 'source_app', 'draft', 'ocr', 'feedback'):
                 if column not in columns:
                     db.execute(f'ALTER TABLE memories ADD COLUMN {column} TEXT')
+            db.execute('CREATE TABLE IF NOT EXISTS memory_feedback (memory_id TEXT, revision INTEGER, event TEXT NOT NULL, PRIMARY KEY (memory_id, revision))')
 
     @contextmanager
     def connect(self):
@@ -103,42 +108,70 @@ class Store:
         finally:
             db.close()
 
+    def recognize(self, image, page=None):
+        import numpy as np
+        from rapidocr import RapidOCR
+
+        image.thumbnail((2400, 2400))
+        pixels = np.array(image.convert('RGB'))[:, :, ::-1].copy()
+        with self.ocr_lock:
+            if self.ocr is None:
+                self.ocr = RapidOCR()
+            return ocr_lines(self.ocr(pixels, text_score=0.0), page)
+
+    def extract_pdf(self, content):
+        from pypdf import PdfReader
+
+        reader = PdfReader(io.BytesIO(content))
+        pages, blocks, scanned = [], [], 0
+        for number, page in enumerate(reader.pages[:100], start=1):
+            text = '\n'.join(readable_lines((page.extract_text() or '')[:20000]))
+            if not text and scanned < 8:
+                scanned += 1
+                try:
+                    page_blocks = []
+                    for image in page.images[:4]:
+                        if image.image is not None:
+                            page_blocks.extend(self.recognize(image.image, page=number))
+                    blocks.extend(page_blocks)
+                    text = '\n'.join(block['text'] for block in page_blocks if block['accepted'])
+                except Exception as error:
+                    logging.warning('Scanned PDF image OCR unavailable (%s)', type(error).__name__)
+            pages.append(text)
+        text = '\n'.join(filter(None, pages))[:200000]
+        status = '已提取 PDF 文本（最多前 100 页，其中最多 8 页运行 OCR）' if text else 'PDF 暂无可用正文，可补充说明'
+        return text, status, blocks
+
     def extract(self, content, name):
         suffix = Path(name).suffix.lower()
         if suffix in {'.txt', '.md', '.csv', '.json', '.log'}:
-            return content.decode('utf-8-sig', errors='replace')[:200000], '已提取文本'
+            encoding = 'utf-16' if content.startswith((b'\xff\xfe', b'\xfe\xff')) else 'utf-8-sig'
+            return '\n'.join(readable_lines(content.decode(encoding, errors='replace')[:200000])), '已读取文本文件', []
         if suffix == '.pdf':
             try:
-                from pypdf import PdfReader
-                reader = PdfReader(io.BytesIO(content))
-                text = '\n'.join((page.extract_text() or '')[:20000] for page in reader.pages[:100])[:200000]
-                return text, '已提取 PDF（最多前 100 页）' if text.strip() else 'PDF 无可提取文字；原件已保存，可补充备注'
+                return self.extract_pdf(content)
             except ImportError:
-                return '', '原件已保存；安装 pypdf 后可重新提取'
+                return '', 'PDF 提取依赖暂不可用，原件已保存', []
             except Exception:
-                return '', 'PDF 提取失败或文件已加密；原件已保存'
+                return '', 'PDF 提取失败或文件已加密，原件已保存', []
         if suffix in {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}:
             try:
                 from PIL import Image, ImageOps
-                import numpy as np
-                from rapidocr import RapidOCR
                 with Image.open(io.BytesIO(content)) as image:
-                    image = ImageOps.exif_transpose(image).convert('RGB')
-                    image.thumbnail((2400, 2400))
-                    pixels = np.array(image)[:, :, ::-1].copy()
-                with self.ocr_lock:
-                    if self.ocr is None:
-                        self.ocr = RapidOCR()
-                    result = self.ocr(pixels)
-                return '\n'.join(result.txts or [])[:200000], '已完成本地 OCR；识别内容请核对'
+                    blocks = self.recognize(ImageOps.exif_transpose(image))
+                text = '\n'.join(block['text'] for block in blocks if block['accepted'])[:200000]
+                return text, '已完成本地 OCR，可核对识别结果' if text else '图片暂无可靠文字，可补充说明', blocks
             except ImportError:
-                return '', '图片已保存；安装 OCR 依赖后可重新提取'
+                return '', '图片已保存，OCR 依赖暂不可用', []
             except Exception:
-                return '', '图片识别失败；原件已保存，可补充备注'
-        return '', '原件已保存；此格式暂不提取正文'
+                return '', '图片识别失败，原件已保存，可补充说明', []
+        return '', '原件已保存，此格式暂无正文提取', []
 
-    def add(self, text='', note='', content=None, name='', title='', defer=False):
+    def add(self, text='', note='', content=None, name='', title='', source_app='', defer=False):
         text, note, title = str(text).strip(), str(note).strip(), str(title).strip()
+        if not isinstance(source_app, str) or len(source_app.strip()) > 120:
+            raise ValueError('来源 App 必须是 120 字以内的文本')
+        source_app = source_app.strip()
         if len(text) > 200000 or len(note) > 10000 or len(title) > 300:
             raise ValueError('文字、备注或标题过长')
         if not text and not content:
@@ -148,28 +181,35 @@ class Store:
         name = name.replace('\\', '/').split('/')[-1][:180]
         if content and not name:
             name = 'attachment.bin'
-        digest = hashlib.sha256(json.dumps([text, note, name], ensure_ascii=False).encode() + (content or b'')).hexdigest()
+        parts = [text, note, name, source_app] if source_app else [text, note, name]
+        digest = hashlib.sha256(json.dumps(parts, ensure_ascii=False).encode() + (content or b'')).hexdigest()
         with self.connect() as db:
             row = db.execute('SELECT id FROM memories WHERE digest=?', (digest,)).fetchone()
         if row:
             return self.get(row['id']), False
-        extracted, status = self.extract(content, name) if content and not defer else ('', '原件已保存，等待后台提取' if content else '已保存分享内容')
+        extracted, status, blocks = (self.extract(content, name) if content and not defer else
+                                     ('', '原件已保存，等待后台提取' if content else '已保存分享内容', []))
         url = text if re.fullmatch(r'https?://\S+', text) else ''
         if url:
             status = '链接已保存；未自动抓取网页正文'
-        combined = '\n'.join(value for value in [text, extracted] if value)
         item = dict(id=uuid.uuid4().hex, created=datetime.now(timezone.utc).isoformat(),
-                    title=title or name or text[:80], text=combined, note=note, url=url,
+                    title=title or name or text[:80], text=text, note=note, url=url, source_app=source_app,
                     name=name, mime=mimetypes.guess_type(name)[0] or 'application/octet-stream',
                     status=status, digest=digest)
+        draft = None if defer and content else make_draft(item, extracted)
+        item['text'] = '\n'.join(filter(None, (text, extracted)))[:200000]
         with self.connect() as db:
-            cursor = db.execute('INSERT OR IGNORE INTO memories (id,created,title,text,note,url,name,mime,status,digest,content,processing) VALUES (:id,:created,:title,:text,:note,:url,:name,:mime,:status,:digest,:content,:processing)', {**item, 'content': content, 'processing': 'extract' if defer and content else 'queued' if defer else None})
+            cursor = db.execute('''INSERT OR IGNORE INTO memories
+                (id,created,title,text,note,url,name,mime,status,digest,content,processing,source_app,draft,ocr)
+                VALUES (:id,:created,:title,:text,:note,:url,:name,:mime,:status,:digest,:content,:processing,:source_app,:draft,:ocr)''',
+                {**item, 'content': content, 'draft': json.dumps(draft) if draft else None, 'ocr': json.dumps(blocks) if blocks else None,
+                 'processing': 'extract' if defer and content else 'queued' if defer else None})
             inserted = cursor.rowcount == 1
             row = db.execute('SELECT id FROM memories WHERE digest=?', (digest,)).fetchone()
         return self.get(row['id']), inserted
 
-    def get(self, identity, file=False):
-        columns = '*' if file else MEMORY_COLUMNS
+    def get(self, identity, file=False, detail=False):
+        columns = '*' if file else MEMORY_COLUMNS + (',ocr' if detail else '')
         with self.connect() as db:
             row = db.execute(f'SELECT {columns} FROM memories WHERE id=?', (identity,)).fetchone()
             return self.decode(row) if row else None
@@ -177,7 +217,9 @@ class Store:
     @staticmethod
     def decode(row):
         record = dict(row)
-        record['classification'] = json.loads(record['classification']) if record['classification'] else None
+        for field in ('classification', 'draft', 'feedback', 'ocr'):
+            if record.get(field):
+                record[field] = json.loads(record[field])
         return record
 
     def classify(self, item, classifier):
@@ -185,34 +227,93 @@ class Store:
         retry_review = previous and previous.get('uncertain') and previous.get('fallback_status') != 'reviewed'
         if classifier is None or (previous and previous['status'] != 'failed' and not retry_review):
             return item
-        result = classifier(item)
+        result = (classifier(item, self.feedback_examples()) if isinstance(classifier, InboxClassifier)
+                  else classifier(item))
         with self.connect() as db:
             db.execute('UPDATE memories SET classification=? WHERE id=? AND classification IS ?',
                        (json.dumps(result), item['id'], json.dumps(previous) if previous else None))
         return self.get(item['id'])
 
+    def record_feedback(self, identity, payload):
+        if not isinstance(payload, dict) or 'label' not in payload or payload['label'] not in (*MEMORY_LABELS, None):
+            raise ValueError('请选择有效的记忆标签')
+        label = payload['label']
+        additional = payload.get('additional_labels', [])
+        if (not isinstance(additional, list) or len(additional) > len(MEMORY_LABELS)
+                or any(value not in MEMORY_LABELS for value in additional) or (additional and label is None)):
+            raise ValueError('请选择主标签和有效的附加标签')
+        labels = [label, *(value for value in MEMORY_LABELS if value != label and value in additional)] if label else []
+        if type(payload.get('working_state')) is not bool:
+            raise ValueError('请选择是否需要跟进')
+        text = payload.get('text', '')
+        if not isinstance(text, str) or len(text) > 10000:
+            raise ValueError('更正正文最多 10000 字')
+        correction = {'label': label, 'labels': labels, 'working_state': payload['working_state'], 'text': text.strip()}
+        with self.graph_lock, self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute(f'SELECT {MEMORY_COLUMNS} FROM memories WHERE id=?', (identity,)).fetchone()
+            if row is None:
+                return None
+            item = self.decode(row)
+            previous = item['feedback'] or {}
+            previous_values = {**previous, 'labels': memory_labels(previous)} if previous else {}
+            if all(previous_values.get(key) == value for key, value in correction.items()):
+                return item
+            feedback = {**correction, 'revision': previous.get('revision', 0) + 1,
+                        'created': datetime.now(timezone.utc).isoformat()}
+            result = {'status': 'classified', 'source': 'user', 'uncertain': False,
+                      'label': label, 'labels': labels, 'working_state': feedback['working_state']}
+            graph_state = item['graph_state']
+            if self.graph_eligible({'classification': result}):
+                graph_state = 'pending'
+            elif graph_state:
+                graph_state = 'remove_pending'
+            db.execute('INSERT INTO memory_feedback VALUES (?, ?, ?)', (identity, feedback['revision'],
+                       json.dumps({**feedback, 'previous_classification': item['classification']})))
+            db.execute('UPDATE memories SET feedback=?,classification=?,graph_state=? WHERE id=?',
+                       (json.dumps(feedback), json.dumps(result), graph_state, identity))
+        return self.get(identity)
+
+    def feedback_examples(self):
+        with self.connect() as db:
+            items = [self.decode(row) for row in db.execute(
+                f'SELECT {MEMORY_COLUMNS} FROM memories WHERE feedback IS NOT NULL ORDER BY id')]
+        examples = []
+        for item in items:
+            evidence = memory_evidence(item)
+            if evidence:
+                examples.append((evidence, item['feedback']['label'], item['feedback']['working_state']))
+        return tuple(examples)
+
     @staticmethod
     def graph_eligible(item):
         result = item['classification'] or {}
         return (result.get('status') == 'classified' and not result.get('uncertain')
-                and result.get('label') in {'semantic', 'episodic'})
+                and bool({'semantic', 'episodic'}.intersection(memory_labels(result))))
 
     def sync_graph(self, identity, graph, namespace):
         with self.graph_lock:
             item = self.get(identity)
-            if not item or not graph or not self.graph_eligible(item) or item['graph_state'] == 'synced':
+            if not item or not graph:
                 return item
-            with self.connect() as db:
-                db.execute("UPDATE memories SET graph_state='pending' WHERE id=?", (identity,))
-            item['graph_state'] = 'pending'
+            removing = item['graph_state'] == 'remove_pending'
+            if not removing and (not self.graph_eligible(item) or item['graph_state'] == 'synced'):
+                return item
+            if not removing:
+                with self.connect() as db:
+                    db.execute("UPDATE memories SET graph_state='pending' WHERE id=?", (identity,))
+                item['graph_state'] = 'pending'
             try:
-                graph.write_upload(namespace, item)
+                if removing:
+                    graph.delete_upload(namespace, identity)
+                else:
+                    graph.write_upload(namespace, item)
             except Exception as error:
                 logging.warning('Personal graph sync failed (%s)', type(error).__name__)
                 return item
+            item['graph_state'] = None if removing else 'synced'
             with self.connect() as db:
-                db.execute("UPDATE memories SET graph_state='synced' WHERE id=?", (identity,))
-            item['graph_state'] = 'synced'
+                db.execute('UPDATE memories SET graph_state=? WHERE id=?', (item['graph_state'], identity))
             return item
 
     def list(self, query=''):
@@ -227,7 +328,7 @@ class Store:
             result = item['classification']
             if not result or result['status'] != 'classified':
                 continue
-            kinds = [result['label']]
+            kinds = memory_labels(result).copy()
             if result['working_state']:
                 kinds.append('working')
             for kind in kinds:
@@ -242,7 +343,7 @@ class Store:
         terms = re.findall(r'[a-z0-9]+|[\u4e00-\u9fff]{2}|[\u4e00-\u9fff]', query.lower())
         ranked = []
         for item in items:
-            hay = ' '.join([item['title'], item['text'], item['note']]).lower()
+            hay = ' '.join(filter(None, (item['title'], item['url'], item['source_app'], item['note'], memory_body(item)))).lower()
             score = sum(1 for term in terms if term in hay)
             if score:
                 ranked.append((score, item))
@@ -251,6 +352,7 @@ class Store:
     def delete(self, identity):
         with self.connect() as db:
             deleted = db.execute('DELETE FROM memories WHERE id=?', (identity,)).rowcount > 0
+            db.execute('DELETE FROM memory_feedback WHERE memory_id=?', (identity,))
         self.sync_local()
         return deleted
 
@@ -291,10 +393,14 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
         if not item:
             return
         if item['processing'] == 'extract':
-            text, status = personal.extract(item['content'], item['name'])
+            text, status, blocks = personal.extract(item['content'], item['name'])
+            draft = make_draft(item, text)
             with personal.connect() as db:
-                db.execute("UPDATE memories SET text=?,status=?,processing='queued' WHERE id=?",
-                           ('\n'.join(filter(None, (item['text'], text))), status, identity))
+                db.execute("""UPDATE memories SET text=?,status=?,draft=?,ocr=?,processing='queued',
+                           graph_state=CASE WHEN feedback IS NOT NULL AND graph_state='synced' THEN 'pending' ELSE graph_state END
+                           WHERE id=? AND processing='extract'""",
+                           ('\n'.join(filter(None, (item['text'], text)))[:200000], status, json.dumps(draft),
+                            json.dumps(blocks) if blocks else None, identity))
         with personal.connect() as db:
             db.execute("UPDATE memories SET processing='classifying' WHERE id=?", (identity,))
         item = personal.get(identity)
@@ -487,6 +593,8 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
                     return self.send(200, {'profile': read_profile(selected)})
                 except ValueError:
                     return self.send(400, {'error': '实验用户无效或记录格式异常'})
+                except ExperimentConfigUnavailable as exc:
+                    return self.send(503, {'error': str(exc)})
                 except (OSError, RuntimeError):
                     return self.send(503, {'error': '实验记忆暂不可用，请检查电脑端的实验库和检索配置。'})
                 except Exception as error:
@@ -512,7 +620,7 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
                                        'user': self.user, 'search_fallback': fallback})
             memory_detail = re.fullmatch(r'/api/memories/([a-f0-9]{32})', parsed.path)
             if memory_detail:
-                item = personal.get(memory_detail[1])
+                item = personal.get(memory_detail[1], detail=True)
                 return self.send(200, {'item': item}) if item else self.send(404, {'error': '记忆不存在'})
             if parsed.path == '/api/export':
                 return self.send(200, {'schema': 'pocketmemory.share.v1', 'user_id': self.user['id'], 'items': personal.list()}, extra={'Content-Disposition': 'attachment; filename="pocketmemory.json"'})
@@ -550,6 +658,8 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
                         return self.send(403, {'error': '不能访问其他用户的数据空间'})
                     graph = LocalGraph().view(database, namespace, allowed_namespace=allowed)
                     return self.send(200, graph)
+                except ExperimentConfigUnavailable as exc:
+                    return self.send(503, {'error': str(exc)})
                 except ValueError as exc:
                     return self.send(400, {'error': str(exc)})
                 except Exception:
@@ -615,6 +725,16 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
                     if not item:
                         return self.send(404, {'error': '记忆不存在'})
                     return self.send(200, {'item': item})
+                match = re.fullmatch(r'/api/memories/([a-f0-9]{32})/feedback', path)
+                if match:
+                    personal = user_store(self.user)
+                    if not personal.record_feedback(match[1], json.loads(self.read_body())):
+                        return self.send(404, {'error': '记忆不存在'})
+                    with personal.graph_lock:
+                        personal.sync_local()
+                    personal.sync_graph(match[1], upload_graph, graph_namespace(self.user['id']))
+                    item = personal.get(match[1], detail=True)
+                    return self.send(200, {'item': item}) if item else self.send(404, {'error': '记忆不存在'})
                 if path == '/api/admin/users':
                     if self.user['role'] != 'admin':
                         return self.send(403, {'error': '仅管理员可以创建用户'})
@@ -631,13 +751,15 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
                     return self.send(404, {'error': '不存在'})
                 body = self.read_body()
                 if not body:
-                    raise ValueError('请求没有带上传内容。请从截图预览点「分享」启动快捷指令，并确认上传字段已选择对应的输入变量。直接发送图片时选「快捷指令输入」。')
+                    if image_upload:
+                        raise ValueError('请将请求体设为「文件」，值选「快捷指令输入」，再分享一张截图或照片。')
+                    raise ValueError('请求没有带上传内容。请检查快捷指令的「表单」，并确认 file 或 text 字段已选择要分享的内容。')
                 name = shared_image_name(body)
                 if image_upload or name:
                     if not name:
                         raise ValueError('没有收到可识别的图片。请将请求体设为「文件」，值选「快捷指令输入」，再分享一张截图或照片。')
                     respond = self.send_share_result
-                    values = {'name': name, 'content': body}
+                    values = {'name': name, 'content': body, 'source_app': parse_qs(urlsplit(self.path).query).get('source_app', [''])[0]}
                 elif self.headers.get('Content-Type', '').lower().startswith('multipart/form-data'):
                     message = BytesParser(policy=policy.default).parsebytes(('Content-Type: ' + self.headers['Content-Type'] + '\r\nMIME-Version: 1.0\r\n\r\n').encode() + body)
                     if not message.is_multipart():
@@ -649,7 +771,7 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
                         data = part.get_payload(decode=True) or b''
                         if filename is not None:
                             files.append((filename, data))
-                        elif field in {'text', 'note', 'title', 'file'}:
+                        elif field in {'text', 'note', 'title', 'file', 'source_app'}:
                             values['text' if field == 'file' else field] = data.decode('utf-8', errors='replace')
                     if len(files) > 1:
                         raise ValueError('每次分享一个文件；多个文件请在快捷指令中逐项重复')
@@ -659,7 +781,7 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
                     try:
                         payload = json.loads(body)
                     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-                        raise ValueError('已收到数据，但无法读取请求体。统一快捷指令请选择「JSON」，用 shared_base64 字段传入「Base64 编码」的输出。') from exc
+                        raise ValueError('无法读取请求体。请在快捷指令中选择「表单」，用 file 上传原件，或用 text 分享文字或链接。') from exc
                     if not isinstance(payload, dict):
                         raise ValueError('链接或文字请使用带有 text 字段的 JSON 对象。')
                     if 'shared_base64' in payload:
@@ -669,6 +791,7 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
                         values = {key: payload[key] for key in ['text', 'note', 'title', 'name'] if key in payload}
                         if payload.get('base64'):
                             values['content'] = base64.b64decode(payload['base64'], validate=True)
+                    values['source_app'] = payload.get('source_app', '')
                 personal = user_store(self.user)
                 item, created = personal.add(**values, defer=background)
                 if item:
@@ -690,7 +813,7 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
             personal = user_store(self.user)
             with personal.graph_lock:
                 item = personal.get(match[1])
-                if upload_graph and item and item['graph_state'] in {'synced', 'pending'}:
+                if upload_graph and item and item['graph_state'] in {'synced', 'pending', 'remove_pending'}:
                     try:
                         upload_graph.delete_upload(graph_namespace(self.user['id']), item['id'])
                     except Exception:
@@ -731,8 +854,6 @@ def main():
         raise ValueError('Access key must contain at least 32 characters')
     if bool(args.tls_cert) != bool(args.tls_key):
         parser.error('--tls-cert and --tls-key must be provided together')
-    from classifier import InboxClassifier
-
     server = make_server(store, token, args.host, args.port, secure=bool(args.tls_cert),
                          classifier=InboxClassifier(), upload_graph=LocalGraph())
     scheme = 'http'

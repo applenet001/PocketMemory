@@ -57,12 +57,16 @@ def parse_labels(answer, count):
                 label = None
         if label not in LABELS + [None]:
             raise ValueError('Invalid main label')
+        applicable = item.get('labels', [label] if label else [])
+        if (not isinstance(applicable, list) or any(value not in LABELS for value in applicable)
+                or len(set(applicable)) != len(applicable) or (label not in applicable if applicable else label is not None)):
+            raise ValueError('Invalid applicable labels')
         if type(item['working_state']) is not bool or type(item['uncertain']) is not bool:
             raise ValueError('Invalid working_state or uncertain value')
         if not isinstance(item['reason'], str) or not item['reason'].strip():
             raise ValueError('Missing annotation reason')
         labels[alias] = {field: item[field] for field in ('label', 'working_state', 'uncertain', 'reason')}
-        labels[alias]['label'] = label
+        labels[alias].update(label=label, labels=applicable)
     if set(labels) != {str(i) for i in range(count)}:
         raise ValueError('Response IDs do not match request')
     return labels
@@ -119,6 +123,7 @@ def summarize(destination, splits, annotations, usage):
                 merged.append(row)
                 continue
             fields = {k: result[k] for k in ('label', 'working_state', 'uncertain', 'reason')}
+            fields['labels'] = result.get('labels', [fields['label']] if fields['label'] else [])
             item = row | fields | dict(
                 annotation_source='deepseek', reviewed=False,
                 annotation_status='needs_human_review' if result['uncertain'] else 'teacher_labeled',

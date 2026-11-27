@@ -2,6 +2,7 @@
 from pathlib import Path
 import os
 from urllib.parse import urlsplit
+from memory_draft import memory_evidence, memory_labels
 
 ROOT = Path(__file__).resolve().parents[1]
 DATABASES = ('semantic', 'episodic')
@@ -11,8 +12,7 @@ FIELDS = ('name', 'title', 'content', 'text', 'timestamp', 'episode_id', 'user_i
 
 
 class LocalGraph:
-    def driver(self):
-        from neo4j import GraphDatabase
+    def connection_settings(self):
         values = {}
         env_file = ROOT / 'config/local.env'
         if env_file.exists():
@@ -27,6 +27,12 @@ class LocalGraph:
         password = os.getenv('NEO4J_PASSWORD') or values.get('NEO4J_PASSWORD')
         if not username or not password:
             raise ValueError('请先配置 config/local.env 中的 Neo4j 凭据')
+        return uri, username, password
+
+    def driver(self):
+        from neo4j import GraphDatabase
+
+        uri, username, password = self.connection_settings()
         return GraphDatabase.driver(uri, auth=(username, password), connection_timeout=3,
                                    connection_acquisition_timeout=5, max_transaction_retry_time=0)
 
@@ -34,20 +40,49 @@ class LocalGraph:
         from neo4j import Query
 
         result = item['classification']
-        route = result['label']
+        routes = [kind for kind in memory_labels(result) if kind in {'semantic', 'episodic'}]
+        route = routes[0]
         label = {'semantic': 'SemanticCandidate', 'episodic': 'ImportedEpisode'}[route]
         identity = item['id']
         with self.driver() as driver, driver.session(database=PERSONAL_DATABASE) as session:
             session.run(Query(f'''
-                MERGE (n:{label} {{namespace:$scope, source_id:$id}})
-                SET n:PocketMemoryUpload, n.route=$route, n.title=$title, n.saved_at=$saved,
-                    n.content=$content, n.confidence=$confidence
-                MERGE (s:UploadSource {{namespace:$scope, source_id:$id}})
-                SET s:PocketMemoryUpload, s.route=$route, s.title=$title, s.saved_at=$saved
-                MERGE (n)-[:HAS_SOURCE]->(s)
-            ''', timeout=6), scope=namespace, id=identity, route=route, title=item['title'],
-                        saved=item['created'], content='\n'.join(filter(None, (item['text'], item['note']))),
-                        confidence=result['confidence']).consume()
+                OPTIONAL MATCH (original:PocketMemoryUpload {{namespace:$scope, source_id:$id}})
+                WHERE original:SemanticCandidate OR original:ImportedEpisode
+                WITH original ORDER BY original.route=$route DESC, elementId(original) LIMIT 1
+                CALL (original) {{
+                    WITH original WHERE original IS NOT NULL
+                    RETURN original AS memory
+                    UNION
+                    WITH original WHERE original IS NULL
+                    MERGE (memory:PocketMemoryUpload:{label} {{namespace:$scope, source_id:$id}})
+                    RETURN memory
+                }}
+                REMOVE memory:SemanticCandidate:ImportedEpisode
+                SET memory.route=$route, memory.routes=$routes,
+                    memory.title=$title, memory.saved_at=$saved,
+                    memory.content=$content, memory.confidence=$confidence, memory.source_app=$app
+                FOREACH (_ IN CASE WHEN 'semantic' IN $routes THEN [1] ELSE [] END | SET memory:SemanticCandidate)
+                FOREACH (_ IN CASE WHEN 'episodic' IN $routes THEN [1] ELSE [] END | SET memory:ImportedEpisode)
+            ''', timeout=6), scope=namespace, id=identity, route=route, routes=routes, title=item['title'],
+                        saved=item['created'], content=memory_evidence(item) or item['title'],
+                        confidence=result.get('confidence'), app=item.get('source_app') or None).consume()
+
+    def consolidate_upload_sources(self):
+        """Remove legacy Companion source nodes whose data is already on their memory node."""
+        from neo4j import Query
+
+        with self.driver() as driver, driver.session(database=PERSONAL_DATABASE) as session:
+            return session.run(Query('''
+                MATCH (n:PocketMemoryUpload)-[link:HAS_SOURCE]->(s:PocketMemoryUpload:UploadSource)
+                WHERE (n:SemanticCandidate OR n:ImportedEpisode)
+                    AND n.namespace=s.namespace AND n.source_id=s.source_id
+                    AND all(label IN labels(s) WHERE label IN ['UploadSource', 'PocketMemoryUpload'])
+                    AND all(key IN keys(s) WHERE key IN ['namespace', 'source_id', 'title', 'route', 'saved_at', 'source_app']
+                        AND s[key]=n[key])
+                    AND properties(link) = {}
+                    AND NOT EXISTS { MATCH (s)-[other]-() WHERE other <> link }
+                DELETE link, s
+            ''', timeout=6)).consume().counters.nodes_deleted
 
     def delete_upload(self, namespace, identity):
         from neo4j import Query
@@ -69,6 +104,16 @@ class LocalGraph:
         with self.driver() as driver, driver.session(database='semantic', default_access_mode=READ_ACCESS) as session:
             return session.run(query, user=user, scope=namespace).data()
 
+    def experiment_episode_scopes(self, episode_ids):
+        from neo4j import Query, READ_ACCESS
+
+        query = Query('''
+            MATCH (e:Episode) WHERE e.episode_id IN $episode_ids AND e.namespace IS NOT NULL
+            RETURN DISTINCT e.episode_id AS episode_id, e.namespace AS scope
+        ''', timeout=5)
+        with self.driver() as driver, driver.session(database='episodic', default_access_mode=READ_ACCESS) as session:
+            return session.run(query, episode_ids=episode_ids).data()
+
     def view(self, database='episodic', namespace='', allowed_namespace=None):
         from neo4j import Query, READ_ACCESS
         if database not in (*DATABASES, *PERSONAL_VIEWS):
@@ -77,19 +122,20 @@ class LocalGraph:
         target = PERSONAL_DATABASE if route else database
         if allowed_namespace is not None and namespace and namespace != allowed_namespace:
             raise ValueError('不能访问其他用户的数据空间')
-        route_filter = ' AND n.route=$route' if route else ''
+        route_filter = ' AND $route IN coalesce(n.routes, [n.route]) AND NOT n:UploadSource' if route else ''
+        label = ':PocketMemoryUpload' if route else ''
         with self.driver() as driver, driver.session(database=target, default_access_mode=READ_ACCESS) as session:
             scopes = session.run(Query(
-                'MATCH (n) WHERE n.namespace IS NOT NULL AND ($allowed IS NULL OR n.namespace=$allowed)'
+                f'MATCH (n{label}) WHERE n.namespace IS NOT NULL AND ($allowed IS NULL OR n.namespace=$allowed)'
                 + route_filter + ' RETURN n.namespace AS name, count(*) AS count ORDER BY count DESC LIMIT 100',
                 timeout=5), allowed=allowed_namespace, route=route).data()
             if not namespace:
                 return {'database': database, 'scopes': scopes, 'nodes': [], 'edges': [], 'limit': 80}
-            projection = ('n{.title,.content,.source_id,.saved_at,.confidence,.route}' if route else
+            projection = ('n{.title,.content,.source_id,.source_app,.saved_at,.confidence,.route}' if route else
                           'n{.name,.title,.content,.text,.timestamp,.episode_id,.user_id,.namespace,.relation,.value,.type}')
-            label = ':PocketMemoryUpload' if route else ''
             order = 'n.saved_at DESC, n.source_id, elementId(n)' if route else 'elementId(n)'
-            edge_filter = ' AND a.route=$route AND b.route=$route' if route else ''
+            edge_filter = (' AND $route IN coalesce(a.routes, [a.route]) AND $route IN coalesce(b.routes, [b.route])'
+                           ' AND NOT a:UploadSource AND NOT b:UploadSource' if route else '')
             edge_order = 'a.saved_at DESC, elementId(r)' if route else 'elementId(r)'
             seed_edges = session.run(Query(
                 f'MATCH (a{label})-[r]->(b{label}) WHERE a.namespace=$scope AND b.namespace=$scope'

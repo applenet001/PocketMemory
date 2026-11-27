@@ -37,6 +37,19 @@ class ClassifierTests(unittest.TestCase):
         complete.assert_not_called()
 
     @patch('classifier.complete')
+    def test_review_keeps_all_applicable_labels(self, complete):
+        annotation = {'id': '0', 'label': 'episodic', 'labels': ['episodic', 'semantic'],
+                      'working_state': False, 'uncertain': False, 'reason': 'An event and a preference'}
+        complete.return_value = json.dumps({'items': [annotation]})
+        result = self.classifier(True)(self.item())
+        self.assertEqual(result['labels'], ['episodic', 'semantic'])
+        self.assertFalse(result['uncertain'])
+        self.assertIn('同一条消息可以有多个标签', complete.call_args.args[0][0]['content'])
+        annotation['labels'] = ['semantic']
+        complete.return_value = json.dumps({'items': [annotation]})
+        self.assertEqual(self.classifier(True)(self.item())['fallback_status'], 'failed')
+
+    @patch('classifier.complete')
     def test_failure_or_invalid_answer_preserves_uncertainty(self, complete):
         for answer in ('not json', '{"items":[]}', '{"items":[{"id":"0","label":"invalid"}]}'):
             complete.return_value = answer

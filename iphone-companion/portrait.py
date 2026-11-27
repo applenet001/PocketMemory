@@ -6,6 +6,7 @@ import re
 
 from deepseek_client import complete
 from experiment_profile import RECENT_K
+from memory_draft import memory_evidence
 
 # Adapted from profile.md for a profile grounded in one person's memories.
 SYSTEM = """你是 PocketMemory 的 C 端用户研究编辑。根据这个人的记忆，写一份能让本人看懂并核对的「近况速览」。
@@ -69,12 +70,12 @@ def personal_evidence(groups, records):
     evidence = {}
     for kind, items in groups.items():
         evidence[kind + '_saved_records'] = [
-            _text(f"保存于 {item['created'][:10]} " + ' '.join(filter(None, (item['note'], item['text']))))
+            _text(f"保存于 {item['created'][:10]} " + memory_evidence(item))
             for item in items[:2]
         ]
     if not any(evidence.values()):
         evidence['recent_saved'] = [
-            _text(' '.join(filter(None, (item['note'], '' if item['url'] else item['text']))))
+            _text(memory_evidence(item))
             for item in records[:4]
         ]
     return evidence

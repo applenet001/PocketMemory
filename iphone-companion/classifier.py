@@ -1,10 +1,13 @@
 """Run the trained HGP3 heads locally for the iPhone inbox."""
 import logging
 import json
+from copy import copy
+from functools import lru_cache
 from pathlib import Path
 import sys
 from threading import Lock
 from deepseek_client import complete, MODEL
+from memory_draft import MEMORY_LABELS, memory_evidence, memory_labels
 
 ROOT = Path(__file__).resolve().parents[1]
 HEAD = ROOT / 'outputs/hgp3-train-2200/classifier'
@@ -24,13 +27,17 @@ def review_uncertain(text, local):
             raise ValueError('Expected one annotation')
         reviewed = entries[0]
         if (str(reviewed.get('id')) != '0' or 'label' not in reviewed
-                or reviewed['label'] not in ('semantic', 'episodic', 'procedural', None)
+                or reviewed['label'] not in (*MEMORY_LABELS, None)
                 or type(reviewed.get('working_state')) is not bool
                 or type(reviewed.get('uncertain')) is not bool
                 or not isinstance(reviewed.get('reason'), str) or not reviewed['reason'].strip()):
             raise ValueError('Invalid annotation')
+        labels = reviewed.get('labels', memory_labels({'label': reviewed['label']}))
+        if (not isinstance(labels, list) or any(label not in MEMORY_LABELS for label in labels)
+                or len(set(labels)) != len(labels) or (reviewed['label'] not in labels if labels else reviewed['label'] is not None)):
+            raise ValueError('Invalid annotation labels')
         return {**local, **{key: reviewed[key] for key in ('label', 'working_state', 'uncertain', 'reason')},
-                'source': 'deepseek', 'review_model': MODEL, 'fallback_status': 'reviewed',
+                'labels': labels, 'source': 'deepseek', 'review_model': MODEL, 'fallback_status': 'reviewed',
                 'local_prediction': {key: local.get(key) for key in ('label', 'working_state', 'confidence', 'threshold')}}
     except Exception as error:
         logging.warning('DeepSeek classification unavailable (%s)', type(error).__name__)
@@ -40,13 +47,40 @@ def review_uncertain(text, local):
 class InboxClassifier:
     def __init__(self):
         self.router = None
+        self.replay_router = None
         self.lock = Lock()
 
-    def __call__(self, item):
-        body = item['text']
-        if item['url']:
-            body = body.removeprefix(item['url']).strip()
-        text = '\n'.join(part for part in (item['note'], body) if part).strip()
+    @staticmethod
+    def new_router(adaptive=False):
+        scripts = str(ROOT / 'scripts')
+        if scripts not in sys.path:
+            sys.path.append(scripts)
+        from hgp3_router import AdaptiveRouter
+        from train_hgp3_2200 import DATA
+
+        router = AdaptiveRouter(HEAD, DATA, None, fallback=None, adaptive=adaptive)
+        if (ENCODER / 'modules.json').is_file():
+            router.config['encoder'] = str(ENCODER)
+        router.tau0 = router.config['confidence_threshold']
+        return router
+
+    @lru_cache(maxsize=4)
+    def feedback_router(self, examples):
+        import torch
+
+        if self.replay_router is None:
+            self.replay_router = self.new_router(adaptive=True)
+        replay_router = self.replay_router
+        labels = replay_router.config['route_labels']
+        rows = [{'vector': torch.from_numpy(replay_router.vector(text).copy()),
+                 'label': labels.index(label), 'working_state': working}
+                for text, label, working in examples]
+        router = copy(self.router)
+        router.head = replay_router.fit_heads(rows)
+        return router
+
+    def __call__(self, item, feedback_examples=()):
+        text = memory_evidence(item).strip()
         if not text:
             return {'status': 'skipped'}
 
@@ -57,19 +91,15 @@ class InboxClassifier:
         try:
             with self.lock:
                 if self.router is None:
-                    scripts = str(ROOT / 'scripts')
-                    if scripts not in sys.path:
-                        sys.path.append(scripts)
-                    from hgp3_router import AdaptiveRouter
-                    from train_hgp3_2200 import DATA
-
-                    router = AdaptiveRouter(HEAD, DATA, None, fallback=None, adaptive=False)
-                    if (ENCODER / 'modules.json').is_file():
-                        router.config['encoder'] = str(ENCODER)
-                    router.tau0 = router.config['confidence_threshold']
-                    self.router = router
-                result, _ = self.router.route({'text': text}, allow_uncertain=True)
-                result = {'status': 'classified', 'model': self.router.identity, **result}
+                    self.router = self.new_router()
+                router = self.router
+                if feedback_examples:
+                    try:
+                        router = self.feedback_router(feedback_examples)
+                    except Exception as error:
+                        logging.warning('Personal feedback training unavailable (%s)', type(error).__name__)
+                result, _ = router.route({'text': text}, allow_uncertain=True)
+                result = {'status': 'classified', 'model': router.identity, **result}
             return review_uncertain(text, result) if result.get('uncertain') else result
         except Exception as error:
             logging.warning('Local HGP3 classification unavailable (%s)', type(error).__name__)

@@ -60,7 +60,32 @@ def take_distinct(pool, count, seen, rank_key):
     raise ValueError(f'Expected {count} distinct rows, found {len(selected)}')
 
 
-def load_external():
+def load_proscript(annotations):
+    synthetic = ROOT / 'outputs/proscript-dialogue-600/synthetic.jsonl'
+    if synthetic.is_file():
+        rows = []
+        for row in read_jsonl(synthetic):
+            if row['review_required'] is False and row['auto_check']['pass'] is True and row['source_issue'] is False:
+                group = row.get('group_id') or row.get('parent_id') or row['id']
+                sample = candidate(row['id'], 'proScript', group, row['text'], 'procedural', 'synthetic_auto_verified')
+                rows.append(dict(sample, split=row['split'], upstream_split=row['split']))
+        return rows
+
+    if annotations is None:
+        raise FileNotFoundError(f'Provide {synthetic} or pass --annotations with the historical HGP3-2200 dataset.json')
+    rows = []
+    for split, counts in EXPECTED.items():
+        archived = [row for row in annotations[split] if row['source'] == 'proScript']
+        if len(archived) != counts['proScript'] or any(
+            not row.get('group_id') or row['split'] != split or row.get('upstream_split') != split
+            or row['label'] != 'procedural' for row in archived
+        ):
+            raise ValueError(f'Invalid archived proScript samples for {split}')
+        rows.extend(archived)
+    return rows
+
+
+def load_external(annotations=None):
     events, profiles = {}, {}
     for i, person in enumerate(read_json('data/external/PerLTQA/Dataset/zh/perltmem.json')):
         group = f'PerLTQA:{i}'
@@ -80,13 +105,7 @@ def load_external():
                 row = candidate(f'{group}:relationship:{key}', 'PerLTQA', group, text,
                                 'semantic', 'mapped_relationship')
                 profiles[group].append(row)
-    pro = []
-    for row in read_jsonl('outputs/proscript-dialogue-600/synthetic.jsonl'):
-        if row['review_required'] is False and row['auto_check']['pass'] is True and row['source_issue'] is False:
-            group = row.get('group_id') or row.get('parent_id') or row['id']
-            pro.append(candidate(row['id'], 'proScript', group, row['text'], 'procedural', 'synthetic_auto_verified'))
-            pro[-1].update(split=row['split'], upstream_split=row['split'])
-    return events, profiles, pro
+    return events, profiles, load_proscript(annotations)
 
 
 def messages(session):
@@ -170,8 +189,8 @@ def verify(buckets):
                 raise ValueError(f'Text or group shared across splits: {row["id"]}')
 
 
-def build_splits():
-    per, profiles, pro = load_external()
+def build_splits(annotations=None):
+    per, profiles, pro = load_external(annotations)
     mobile = read_json('data/text/mobilemem_data.json')
     held = [
         session['id'] for user in mobile
@@ -240,8 +259,7 @@ def build_splits():
     return buckets, held
 
 
-def carry_mobile_annotations(buckets, annotation_path):
-    previous = read_json(annotation_path)
+def carry_mobile_annotations(buckets, previous):
     result = {}
     for split, rows in buckets.items():
         old = {row['id']: row for row in previous[split] if row['source'] == 'MobileMem'}
@@ -292,8 +310,9 @@ def write_manifests(out, buckets, held, annotated=None):
 
 
 def prepare(out, annotations=None):
-    buckets, held = build_splits()
-    annotated = carry_mobile_annotations(buckets, annotations) if annotations else None
+    previous = read_json(annotations) if annotations is not None else None
+    buckets, held = build_splits(previous)
+    annotated = carry_mobile_annotations(buckets, previous) if previous is not None else None
     filenames = dict(train='candidates.jsonl', val='val.jsonl', test='test.jsonl')
     paths = [out / name for name in (*filenames.values(), 'manifest.json', 'evaluation-manifest.json')]
     if annotated is not None:
@@ -316,6 +335,7 @@ def prepare(out, annotations=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, default=ROOT / 'outputs/hgp3-train-2200-rebuilt')
-    parser.add_argument('--annotations', type=Path, help='Carry existing MobileMem labels into the new dataset.')
+    parser.add_argument('--annotations', type=Path,
+                        help='Reuse historical MobileMem labels and supply proScript samples if synthetic.jsonl is missing.')
     args = parser.parse_args()
     prepare(args.out, args.annotations)
