@@ -11,6 +11,10 @@ PocketMemory 是一个个人记忆工具。你可以通过 iPhone 的 Safari 或
 
 **Qilin Zhou** 负责本课程项目中 HGP 对 MobileMem 的端到端适配、记忆分类器的增量训练，以及 HGP 在 MobileMem 文本轨道上的测试与评测。 [HGP v2 与 MobileMem 实验说明](docs/hgp-v2-mobilemem.md)
 
+## Results
+
+从 MobileMem Text 的 smoke 样例看 HGP v2 如何把消息分类，以及情节、语义、操作规则和工作状态各自存成什么样。下载后可用浏览器直接打开。 [查看记忆分类展示](results/mobilemem-hgp-v2.html)
+
 ## Quick Start
 
 ### 1. 下载
