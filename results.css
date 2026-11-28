@@ -81,6 +81,13 @@ button:focus-visible { outline: 3px solid #236553; outline-offset: 3px; }
 .interactive .graph-node[aria-pressed="true"] { border-color: #236553; box-shadow: 0 0 0 2px #236553; z-index: 2; }
 .node-details { margin: 10px 0; padding: 8px 12px; background: #f0f5ee; border-radius: 8px; font-size: .89rem; }
 .node-details ul { margin: 4px 0 0; padding-inline-start: 1.25rem; }
+.semantic-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.semantic-groups .graph-panel { margin: 0; }
+.semantic-edges { list-style: none; padding: 0; margin: 0; }
+.semantic-edges li { padding: 8px 0; border-top: 1px solid #d7dfd3; }
+.semantic-edges code { display: block; color: #325e80; font-size: .8rem; }
+.semantic-edges strong { font-size: .93rem; }
+.semantic-edges a { display: inline-block; margin-inline-start: 4px; color: #325e80; font-size: .8rem; }
 .tree-panel summary { cursor: pointer; font-weight: 650; }
 .tree-panel summary code { color: #815329; }
 .tree-nodes { margin: 9px 0 0; padding-left: 2.1rem; margin-left: 10px; border-left: 2px solid #d8c1a8; }
@@ -92,6 +99,6 @@ button:focus-visible { outline: 3px solid #236553; outline-offset: 3px; }
 footer { margin-top: 20px; color: #475550; font-size: .88rem; }
 @media (max-width: 680px) {
   main { padding-top: 18px; }
-  .cards, .routing ul, .graph-network { grid-template-columns: minmax(0, 1fr); }
+  .cards, .routing ul, .graph-network, .semantic-groups { grid-template-columns: minmax(0, 1fr); }
   .graph-network { gap: 10px; }
 }
