@@ -620,10 +620,11 @@ class EpisodeStore:
             persons = extracted.get("persons", [])
             topics = extracted.get("topics", [])
             time_info = extracted.get("time")
+            time_text = time_info.get("value") if isinstance(time_info, dict) else time_info
             locations = extracted.get("location", [])
                 
             has_participants = len(extracted.get("participants", [])) > 0
-            has_time = extracted.get("time") is not None
+            has_time = isinstance(time_text, str) and bool(time_text.strip())
             has_location = len(extracted.get("location", [])) > 0
             has_persons = len(persons) > 0
             has_topics = len(topics) > 0
@@ -637,20 +638,6 @@ class EpisodeStore:
                             neo4j_password=NEO4J_PASSWORD,
                             database=NEO4J_EPISODIC_DATABASE
                         )
-
-                        participants = extracted.get('participants', [])
-                        time_info = extracted.get('time')
-                        locations = extracted.get('location', [])
-
-                        time_str = None
-                        if time_info:
-                            if isinstance(time_info, dict):
-                                granularity = time_info.get('granularity', 'absolute')
-                                if granularity == 'absolute':
-                                    time_str = time_info.get('value')
-                            else:
-
-                                time_str = str(time_info) if len(str(time_info)) > 10 else None
 
                         episode_match_dims = {}  # ep_id -> {'actor': bool, 'person': bool, 'topic': bool, 'location': bool, 'time': bool}
 
@@ -689,8 +676,8 @@ class EpisodeStore:
                         if has_time:
                             eps = graph_builder.query_episodes(
                                 namespace=self.namespace,
-                                start_time=time_str if time_str else None,
-                                limit=top_k * 2
+                                event_date=time_text,
+                                limit=top_k * 2,
                             )
                             for ep_dict in eps:
                                 ep_id = ep_dict.get('episode_id')

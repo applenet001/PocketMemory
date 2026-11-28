@@ -156,12 +156,21 @@ def main():
     args = parser.parse_args()
     if args.top_k < 1:
         parser.error('--top-k must be positive')
+    run_root = args.run_root.resolve()
+    selection = run_root / 'selected-users.json'
+    if selection.is_file():
+        users = json.loads(selection.read_text(encoding='utf-8-sig'))
+        if not isinstance(users, list) or not users or any(type(user) is not int or user not in (1, 2) for user in users):
+            parser.error('selected-users.json must contain a nonempty list of MobileMem user indices')
+        if args.user not in users:
+            print(f'Skipping user {args.user} {args.stage}: excluded by selected-users.json', flush=True)
+            return
     sys.path.insert(0, str(MEMBASE))
     os.environ.setdefault('LITELLM_LOCAL_MODEL_COST_MAP', 'True')
     from hgp_v2_membase_layer import register_v2
 
     register_v2()
-    target = args.run_root.resolve() / f'user-{args.user:02d}'
+    target = run_root / f'user-{args.user:02d}'
     config = dict(user_id='guest', construction_dir=str(target / 'construct'))
     if args.stage == 'construct':
         construct(args.dataset.resolve(), args.user, target, config)

@@ -1,9 +1,40 @@
 import logging
+import re
 from typing import Dict, List, Any, Optional
-from datetime import datetime
+from datetime import date, datetime
 from neo4j import GraphDatabase
 
 logger = logging.getLogger(__name__)
+
+_EVENT_DATE = re.compile(
+    r"(?:(?P<year>[0-9]{4})[年./-]\s*)?"
+    r"(?P<month>[0-9]{1,2})[月./-]\s*(?P<day>[0-9]{1,2})(?:[日号])?"
+    r"(?:\s*(?P<part>凌晨|早上|上午|中午|下午|傍晚|晚上|夜间))?"
+)
+_DAYPART_HOURS = {
+    "凌晨": (0, 6), "早上": (6, 12), "上午": (6, 12), "中午": (11, 14),
+    "下午": (12, 18), "傍晚": (17, 20), "晚上": (18, 24), "夜间": (18, 24),
+}
+
+
+def _calendar_filter(value: str) -> Dict[str, int]:
+    value = value.strip()
+    match = _EVENT_DATE.fullmatch(value)
+    try:
+        if match is None:
+            day = datetime.fromisoformat(value).date()
+            return {"year": day.year, "month": day.month, "day": day.day}
+        year = match["year"]
+        # Use a leap year only to validate a month/day that has no year.
+        day = date(int(year) if year else 2000, int(match["month"]), int(match["day"]))
+    except ValueError:
+        return {}
+    result = {"month": day.month, "day": day.day}
+    if year:
+        result["year"] = day.year
+    if match["part"]:
+        result["first_hour"], result["end_hour"] = _DAYPART_HOURS[match["part"]]
+    return result
 
 
 class EntityEmbedder:
@@ -307,7 +338,8 @@ class EpisodicGraphBuilder:
         limit: int = 10,
         fuzzy_match: bool = True,
         use_vector_search: bool = True,
-        similarity_threshold: float = 0.5
+        similarity_threshold: float = 0.5,
+        event_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         try:
             results = []
@@ -333,9 +365,9 @@ class EpisodicGraphBuilder:
                         session, namespace, topic_name, limit, similarity_threshold
                     ))
                 
-                if start_time or end_time:
+                if start_time or end_time or event_date:
                     results.extend(self._time_range_query(
-                        session, namespace, start_time, end_time, limit
+                        session, namespace, start_time, end_time, limit, event_date
                     ))
                 
                 if not results and fuzzy_match:
@@ -572,21 +604,31 @@ class EpisodicGraphBuilder:
         namespace: str,
         start_time: Optional[str],
         end_time: Optional[str],
-        limit: int
+        limit: int,
+        event_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        query = "MATCH (e:Episode {namespace: $namespace})"
+        query = "MATCH (e:Episode {namespace: $namespace}) WITH e, datetime(e.timestamp) AS recorded_time"
         params = {"namespace": namespace, "limit": limit}
 
         conditions = []
         if start_time:
-            conditions.append("datetime(e.timestamp) >= datetime($start_time)")
+            conditions.append("recorded_time >= datetime($start_time)")
             params["start_time"] = start_time
         if end_time:
-            conditions.append("datetime(e.timestamp) <= datetime($end_time)")
+            conditions.append("recorded_time <= datetime($end_time)")
             params["end_time"] = end_time
-        
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
+        if event_date:
+            calendar = _calendar_filter(event_date)
+            for field in ("year", "month", "day"):
+                if field in calendar:
+                    conditions.append(f"recorded_time.{field} = ${field}")
+            if "first_hour" in calendar:
+                conditions.extend(("recorded_time.hour >= $first_hour", "recorded_time.hour < $end_hour"))
+            params.update(calendar)
+
+        if not conditions:
+            return []
+        query += " WHERE " + " AND ".join(conditions)
         
         query += """
             RETURN e.episode_id AS episode_id,

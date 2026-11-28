@@ -13,6 +13,8 @@ PocketMemory 是一个个人记忆工具。你可以通过 iPhone 的 Safari 或
 
 ## Results
 
+从 `Entity.type` 看 User 1 的人物画像、地点和人际关系，沿事件时间轴回放历史建议与待办提醒。[User 1 记忆图谱](https://applenet001.github.io/PocketMemory/memory-atlas.html)
+
 从 MobileMem Text 的 smoke 样例看 HGP v2 如何把消息分类，以及情节、语义、操作规则和工作状态各自存成什么样。 [在线查看记忆分类展示](https://applenet001.github.io/PocketMemory/)
 
 ## Quick Start
