@@ -74,16 +74,37 @@
     .graph-branches li > code { color: #236553; font-size: .75rem; white-space: nowrap; }
     .state-chip { display: block; margin-top: 7px; padding: 4px 8px; border-radius: 5px; color: #5d3570; background: #f4edf6; font-size: .79rem; }
     .state-chip code { margin-inline-end: 4px; }
+    button.graph-node { width: 100%; color: inherit; font: inherit; text-align: left; }
+    button:focus-visible { outline: 3px solid #236553; outline-offset: 3px; }
+    .graph-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .graph-controls[hidden], .node-details[hidden], .tree-controls[hidden] { display: none; }
+    .graph-controls small { color: #475550; }
+    .action-button { border: 1px solid #bfcfc3; border-radius: 6px; background: #fff; padding: 4px 10px; font: inherit; color: #236553; cursor: pointer; }
+    .action-button:disabled { opacity: .5; cursor: default; }
+    .graph-network.interactive { display: block; position: relative; height: 365px; border: 1px solid #d7dfd3; border-radius: 10px; background: radial-gradient(#d5dfd2 1px, #f7faf5 1px) 0 0 / 16px 16px; }
+    .interactive canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .interactive .graph-branches, .interactive .graph-branches li { display: contents; }
+    .interactive .graph-branches li > code { display: none; }
+    .interactive .graph-node { position: absolute; z-index: 1; width: min(43%, 230px); transform: translate(-50%, -50%); cursor: grab; touch-action: none; user-select: none; }
+    .interactive .graph-node:active { cursor: grabbing; }
+    .interactive .graph-node[aria-pressed="true"] { border-color: #236553; box-shadow: 0 0 0 2px #236553; z-index: 2; }
+    .node-details { margin: 10px 0; padding: 8px 12px; background: #f0f5ee; border-radius: 8px; font-size: .89rem; }
+    .node-details ul { margin: 4px 0 0; padding-inline-start: 1.25rem; }
     .tree-panel summary { cursor: pointer; font-weight: 650; }
     .tree-panel summary code { color: #815329; }
     .tree-nodes { margin: 9px 0 0; padding-left: 2.1rem; margin-left: 10px; border-left: 2px solid #d8c1a8; }
     .tree-nodes li { padding: 2px 0; }
     .tree-nodes li::marker { color: #815329; }
+    .tree-nodes li[aria-current="step"] { background: #f6eee3; border-radius: 4px; padding-inline: 4px; }
+    .tree-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+    .tree-controls output { color: #815329; font-size: .86rem; }
     footer { margin-top: 20px; color: #475550; font-size: .88rem; }
     @media (max-width: 680px) {
       main { padding-top: 18px; }
       .cards, .routing ul, .graph-network { grid-template-columns: minmax(0, 1fr); }
       .graph-network { gap: 10px; }
+      .graph-network.interactive { height: 435px; }
+      .interactive .graph-node { padding: 6px 7px; font-size: .8rem; }
     }
   </style>
 </head>
@@ -175,28 +196,33 @@
       <p>节点和关系取自本机 Neo4j 的 MobileMem 回放。E1、E2 下方附有各事件发生时写入其会话的 Working 状态。</p>
       <div class="graph-panel">
         <h3><code>v2-episodic</code> · 情节图</h3>
-        <div class="graph-network" aria-label="羽毛球浏览事件的四条出边">
-          <div class="graph-node">
+        <div class="graph-controls" hidden>
+          <small>点选节点查看关系，可以拖动节点调整位置。</small>
+          <button class="action-button" type="button" id="reset-network">重置布局</button>
+        </div>
+        <div class="graph-network" id="episode-network" role="group" aria-label="羽毛球浏览事件的四条出边">
+          <button class="graph-node" type="button" data-node="E1" data-position=".23,.43" data-title="E1 · 浏览羽毛球词条">
             <small>E1 · Episode</small>
             <strong>浏览羽毛球词条</strong>
             <small><time datetime="2024-06-01T09:03:22+08:00">2024-06-01 09:03:22</time></small>
             <span class="state-chip">Working · <code>state_0000</code> 浏览羽毛球 · 1/1</span>
-          </div>
+          </button>
           <ul class="graph-branches">
-            <li><code>HAPPENS_AT →</code><div class="graph-node"><small>Time</small><strong>2024-06-01</strong></div></li>
-            <li><code>ABOUT →</code><div class="graph-node"><small>Topic</small><strong>羽毛球</strong></div></li>
-            <li><code>INVOLVES →</code><div class="graph-node"><small>Actor</small><strong>用户</strong></div></li>
-            <li>
+            <li data-relationship="HAPPENS_AT"><code>HAPPENS_AT →</code><button class="graph-node" type="button" data-node="time" data-position=".77,.12" data-title="Time · 2024-06-01"><small>Time</small><strong>2024-06-01</strong></button></li>
+            <li data-relationship="ABOUT"><code>ABOUT →</code><button class="graph-node" type="button" data-node="topic" data-position=".77,.31" data-title="Topic · 羽毛球"><small>Topic</small><strong>羽毛球</strong></button></li>
+            <li data-relationship="INVOLVES"><code>INVOLVES →</code><button class="graph-node" type="button" data-node="actor" data-position=".77,.50" data-title="Actor · 用户"><small>Actor</small><strong>用户</strong></button></li>
+            <li data-relationship="NEXT">
               <code>NEXT →</code>
-              <div class="graph-node">
+              <button class="graph-node" type="button" data-node="E2" data-position=".77,.77" data-title="E2 · 开始比较通勤路线">
                 <small>E2 · Episode</small>
                 <strong>开始比较通勤路线</strong>
                 <small><time datetime="2024-06-04T07:05:20+08:00">2024-06-04 07:05:20</time></small>
                 <span class="state-chip">Working · <code>state_0000</code> 规划通勤路线 · 2/2</span>
-              </div>
+              </button>
             </li>
           </ul>
         </div>
+        <div class="node-details" id="node-details" aria-live="polite" hidden></div>
         <p class="storage">时间使用 UTC+08:00。E1、E2 属于不同会话，状态 ID 分别在各自会话内编号。</p>
       </div>
       <div class="graph-panel">
@@ -225,11 +251,154 @@
             <li>用同一套指标记录第二条路线</li>
             <li>比较两条路线的记录</li>
           </ol>
+          <div class="tree-controls" hidden>
+            <button class="action-button" type="button" id="previous-action">上一步</button>
+            <button class="action-button" type="button" id="next-action">下一步</button>
+            <output id="current-action" aria-live="polite"></output>
+          </div>
         </details>
       </div>
     </section>
 
     <footer>示例来自 HGP v2 的 MobileMem Text 回放。分类卡片和规则树取自 smoke，记忆图与事件下的状态取自同一用户的全量回放。 <a href="https://github.com/applenet001/PocketMemory/blob/release/v2/docs/hgp-v2-mobilemem-schema.md">完整字段说明</a></footer>
   </main>
+  <script>
+    (() => {
+      const graph = document.querySelector('#episode-network');
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      if (context) {
+        const controls = document.querySelector('.graph-controls');
+        const details = document.querySelector('#node-details');
+        const nodes = new Map([...graph.querySelectorAll('[data-node]')].map(button => {
+          const initial = button.dataset.position.split(',').map(Number);
+          return [button.dataset.node, { button, initial, position: [...initial] }];
+        }));
+        const source = nodes.get('E1');
+        const edges = [...graph.querySelectorAll('[data-relationship]')].map(branch => ({
+          source,
+          target: nodes.get(branch.querySelector('[data-node]').dataset.node),
+          label: branch.dataset.relationship
+        }));
+        let selected = source;
+        let drag = null;
+        let frame = 0;
+
+        function draw() {
+          frame = 0;
+          const width = graph.clientWidth;
+          const height = graph.clientHeight;
+          const scale = window.devicePixelRatio || 1;
+          canvas.width = Math.round(width * scale);
+          canvas.height = Math.round(height * scale);
+          context.setTransform(scale, 0, 0, scale, 0, 0);
+          for (const node of nodes.values()) {
+            const margins = [(node.button.offsetWidth / 2 + 5) / width, (node.button.offsetHeight / 2 + 5) / height];
+            node.position = node.position.map((coordinate, axis) => Math.min(1 - margins[axis], Math.max(margins[axis], coordinate)));
+            node.button.style.left = `${node.position[0] * 100}%`;
+            node.button.style.top = `${node.position[1] * 100}%`;
+          }
+          for (const edge of edges) {
+            const [x, y] = edge.source.position.map((point, axis) => point * [width, height][axis]);
+            const [tx, ty] = edge.target.position.map((point, axis) => point * [width, height][axis]);
+            const dx = tx - x;
+            const dy = ty - y;
+            if (Math.hypot(dx, dy) < 1) continue;
+            const border = Math.min(
+              (edge.target.button.offsetWidth / 2 + 3) / Math.abs(dx),
+              (edge.target.button.offsetHeight / 2 + 3) / Math.abs(dy)
+            );
+            if (border >= 1) continue;
+            const endX = tx - dx * border;
+            const endY = ty - dy * border;
+            const angle = Math.atan2(dy, dx);
+            const active = selected === edge.source || selected === edge.target;
+            context.strokeStyle = active ? '#236553' : '#bdcac2';
+            context.lineWidth = active ? 2 : 1.2;
+            context.beginPath();
+            context.moveTo(x, y);
+            context.lineTo(endX, endY);
+            context.moveTo(endX - 8 * Math.cos(angle - .5), endY - 8 * Math.sin(angle - .5));
+            context.lineTo(endX, endY);
+            context.lineTo(endX - 8 * Math.cos(angle + .5), endY - 8 * Math.sin(angle + .5));
+            context.stroke();
+          }
+        }
+
+        function refresh() {
+          if (!frame) frame = requestAnimationFrame(draw);
+        }
+
+        function select(node) {
+          selected = node;
+          for (const entry of nodes.values()) entry.button.setAttribute('aria-pressed', String(entry === node));
+          const title = document.createElement('strong');
+          title.textContent = node.button.dataset.title;
+          const related = document.createElement('ul');
+          for (const { source: origin, target, label } of edges) {
+            if (node !== origin && node !== target) continue;
+            const item = document.createElement('li');
+            item.textContent = node === origin ? `${label} → ${target.button.dataset.title}` : `${origin.button.dataset.title} → ${label}`;
+            related.append(item);
+          }
+          const state = node.button.querySelector('.state-chip');
+          details.replaceChildren(title);
+          if (state) details.append(state.cloneNode(true));
+          details.append(related);
+          refresh();
+        }
+
+        canvas.setAttribute('aria-hidden', 'true');
+        graph.prepend(canvas);
+        graph.classList.add('interactive');
+        controls.hidden = false;
+        details.hidden = false;
+        for (const node of nodes.values()) {
+          node.button.addEventListener('click', () => select(node));
+          node.button.addEventListener('pointerdown', event => {
+            if (event.button !== 0 || drag) return;
+            node.button.setPointerCapture(event.pointerId);
+            drag = { node, pointerId: event.pointerId, start: [event.clientX, event.clientY], position: [...node.position] };
+          });
+        }
+        graph.addEventListener('pointermove', event => {
+          if (!drag || event.pointerId !== drag.pointerId) return;
+          drag.node.position = [
+            drag.position[0] + (event.clientX - drag.start[0]) / graph.clientWidth,
+            drag.position[1] + (event.clientY - drag.start[1]) / graph.clientHeight
+          ];
+          refresh();
+        });
+        graph.addEventListener('lostpointercapture', () => { drag = null; });
+        document.querySelector('#reset-network').addEventListener('click', () => {
+          for (const node of nodes.values()) node.position = [...node.initial];
+          select(source);
+        });
+        new ResizeObserver(refresh).observe(graph);
+        select(source);
+      }
+
+      const actions = [...document.querySelectorAll('.tree-nodes li')];
+      const previous = document.querySelector('#previous-action');
+      const next = document.querySelector('#next-action');
+      const current = document.querySelector('#current-action');
+      let step = 0;
+
+      function showStep() {
+        actions.forEach((action, index) => {
+          if (index === step) action.setAttribute('aria-current', 'step');
+          else action.removeAttribute('aria-current');
+        });
+        previous.disabled = step === 0;
+        next.disabled = step === actions.length - 1;
+        current.textContent = `${step + 1}/${actions.length} · ${actions[step].textContent}`;
+      }
+
+      previous.addEventListener('click', () => { step -= 1; showStep(); });
+      next.addEventListener('click', () => { step += 1; showStep(); });
+      document.querySelector('.tree-controls').hidden = false;
+      showStep();
+    })();
+  </script>
 </body>
 </html>
