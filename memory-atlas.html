@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file:; style-src 'self' file: 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>User 1 记忆图谱 · PocketMemory</title>
+  <link rel="stylesheet" href="memory-atlas.css">
+  <script src="memory-atlas-data.js" defer></script>
+  <script src="memory-atlas.js" defer></script>
+</head>
+<body>
+  <header class="bar">
+    <div class="bar-inner">
+      <a class="brand" href="index.html"><span class="brand-icon" aria-hidden="true">✦</span>PocketMemory</a>
+      <nav aria-label="项目结果"><a href="index.html">实验结果</a><a href="memory-graph.html">Neo4j 结构</a></nav>
+      <span class="source-label">MobileMem Text · User 1</span>
+    </div>
+  </header>
+  <main>
+    <header class="intro">
+      <div>
+        <p class="eyebrow">HGP v2 <span></span> 语义记忆</p>
+        <h1>User 1 的记忆图谱</h1>
+        <p>从片段记忆看见兴趣、生活轨迹和人际关系，再找到下一步。</p>
+      </div>
+    </header>
+    <div class="modes" role="group" aria-label="展示视图">
+      <button type="button" data-mode="portrait" aria-pressed="true">人物画像</button>
+      <button type="button" data-mode="locations" aria-pressed="false">地点轨迹</button>
+      <button type="button" data-mode="people" aria-pressed="false">人际网络</button>
+      <button type="button" data-mode="assistant" aria-pressed="false">助手建议</button>
+    </div>
+    <div class="workspace">
+      <section class="panel graph" aria-labelledby="graph-title">
+        <header class="panel-header">
+          <div><h2 id="graph-title">语义图谱</h2><p id="graph-description">按类型查看 User 1 的语义记忆</p></div>
+          <span class="count" id="fact-count"></span>
+        </header>
+        <div class="stage" id="stage">
+          <canvas id="edges" aria-hidden="true"></canvas>
+          <div class="subject">
+            <div class="memory-face" aria-hidden="true"><i></i><i></i></div>
+            <span class="reaction" id="reaction" aria-hidden="true"></span>
+            <strong>User 1</strong>
+          </div>
+          <div id="nodes"></div>
+          <p id="empty-graph" class="empty-graph" hidden></p>
+        </div>
+        <div class="graph-footer">
+          <ul class="legend" id="legend" aria-label="实体类型"></ul>
+        </div>
+      </section>
+      <aside class="panel inspector" aria-labelledby="inspector-title">
+        <header class="panel-header">
+          <div><p class="eyebrow" id="inspector-kicker">当前选中</p><h2 id="inspector-title">记忆详情</h2></div>
+          <span class="inspector-icon" aria-hidden="true">✦</span>
+        </header>
+        <div id="detail"></div>
+      </aside>
+    </div>
+    <section class="panel timeline" aria-labelledby="timeline-title">
+      <header class="panel-header">
+        <div><h2 id="timeline-title">生活回放</h2><p>沿着原始记录日期，查看每个片段关联的语义</p></div>
+        <button class="play-button" id="play" type="button" disabled>▶ 播放轨迹</button>
+      </header>
+      <div id="timeline-controls">
+        <label class="sr-only" for="scrub">回放进度</label>
+        <input id="scrub" type="range" min="0" max="1" value="1" step="1" disabled>
+        <div class="ticks" id="ticks" aria-label="选择时间点"></div>
+      </div>
+      <div class="event" id="event" aria-live="polite"></div>
+    </section>
+    <footer><span>MobileMem Text · User 1 摘要 · 人物与地点已泛化</span><a href="https://github.com/applenet001/PocketMemory">项目源码</a></footer>
+    <noscript><p>请开启 JavaScript 查看交互图谱。</p></noscript>
+  </main>
+</body>
+</html>
