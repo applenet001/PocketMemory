@@ -10,8 +10,59 @@
 <body>
   <main>
     <nav class="page-nav" aria-label="结果页面"><a href="index.html">返回分类概览</a><a href="memory-graph.html">Neo4j 记忆图</a></nav>
+    <header class="structure">
+      <h1>程序规则树</h1>
+      <p>HGP 用 <code>sequence</code> 排列步骤，用 <code>branch</code> 判断条件。每个 <code>case</code> 都可以包含动作、顺序或下一层分支。</p>
+    </header>
+    <section class="structure" id="branch-example" aria-labelledby="branch-title">
+      <h2 id="branch-title">备选停车点准入 · 两层条件</h2>
+      <p>取自 MobileMem 全量回放的「极简评分表与备选停车点准入规则」。点开条件可以查看各自的后续步骤。</p>
+      <div class="tree-panel">
+        <p class="rule-trigger"><code>if_conditions</code> · 需要评估停车点或进出效率，且清单有 B 栏硬规则区。</p>
+        <details open>
+          <summary><code>sequence</code> · 评估备选停车点</summary>
+          <ol class="tree-nodes">
+            <li>画一张 2×N 评分表。</li>
+            <li>给进出效率打 0、1 或 2 分。</li>
+            <li>给步行负担打 0、1 或 2 分。</li>
+            <li>
+              <details class="rule-branch" open>
+                <summary><code>branch</code> · 是否触发一票否决</summary>
+                <div class="branch-cases">
+                  <details open>
+                    <summary>出库排队超过 10 分钟，或回主路难并线</summary>
+                    <p>直接划掉该停车点。</p>
+                  </details>
+                  <details open>
+                    <summary>未触发一票否决</summary>
+                    <ol class="tree-nodes">
+                      <li>将该停车点写为候选 #3。</li>
+                      <li>
+                        <details class="rule-branch" open>
+                          <summary><code>branch</code> · 两项评分是否至少达到 (2,1) 或 (1,2)</summary>
+                          <div class="branch-cases">
+                            <details open>
+                              <summary>达到评分要求</summary>
+                              <p>允许进入清单。</p>
+                            </details>
+                            <details open>
+                              <summary>未达到评分要求</summary>
+                              <p>不允许进入清单。</p>
+                            </details>
+                          </div>
+                        </details>
+                      </li>
+                    </ol>
+                  </details>
+                </div>
+              </details>
+            </li>
+          </ol>
+        </details>
+      </div>
+    </section>
     <section class="structure" id="rule-tree" aria-labelledby="tree-title">
-      <h1 id="tree-title">程序规则树</h1>
+      <h2 id="tree-title">通勤路线对比 · 顺序步骤</h2>
       <p>「通勤路线对比记录模板」的 <code>tree</code> 存储一棵顺序树。根节点是 <code>sequence</code>，子节点按顺序执行。</p>
       <div class="tree-panel">
         <details open>
@@ -40,7 +91,7 @@
   </main>
   <script>
     (() => {
-      const actions = [...document.querySelectorAll('.tree-nodes li')];
+      const actions = [...document.querySelectorAll('#rule-tree .tree-nodes > li')];
       const previous = document.querySelector('#previous-action');
       const next = document.querySelector('#next-action');
       const current = document.querySelector('#current-action');
