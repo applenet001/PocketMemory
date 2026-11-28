@@ -919,7 +919,8 @@ def extract_state_from_episodes(
     recent_episodes_data = store.query_timeline(limit=lookback_episodes)
 
     recent_episodes = []
-    for ep in recent_episodes_data:
+    # The timeline returns the most recent events first. State inference expects chronological order.
+    for ep in reversed(recent_episodes_data):
         if isinstance(ep, Episode):
             recent_episodes.append(ep)
         elif isinstance(ep, dict):

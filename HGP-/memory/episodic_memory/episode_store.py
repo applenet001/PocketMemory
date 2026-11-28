@@ -351,7 +351,7 @@ class Neo4jEpisodeGraph:
             for record in records:
                 node = record["e"]
                 results.append({
-                    "id": node["id"],
+                    "id": node.get("episode_id") or node.get("id"),
                     "timestamp": node["timestamp"],
                     "event_type": node["event_type"],
                     "content": node["content"],

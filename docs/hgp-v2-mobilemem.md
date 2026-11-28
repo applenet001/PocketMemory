@@ -23,6 +23,8 @@ v2 的记忆和分类器增量只使用本次回放的 MobileMem 消息，以及
 
 没有显式会话 ID 的 QA 先走原版 Episodic 检索。v2 用已召回 `episode_id` 在回放记录里定位触发的 `(session_id, state_id)`，将当时的 Working 状态和进度附到该事件正文之后。未关联状态的事件照常展示。关联只使用回放中的 ID，无额外 LLM 请求。要检查实际生成的问答上下文，可用 `run_hgp_v2_smoke.py --search-run <运行目录> --query <问题>`，Episodic 检索的用量另计入 `deepseek-search-usage.jsonl`。 [v2 查询入口](../scripts/run_hgp_v2_smoke.py)
 
+Episodic 混合检索分别取图候选和正文向量候选。图路根据问题中提取的参与者、人物、主题、地点和时间查 Neo4j，再按 `episode_id` 取本地事件。向量路用 DistilUSE 对问题和本地事件正文的向量做余弦相似度比较，预取最多 `2 × top_k` 条，向量门槛为 `0.02`。按事件 ID 合并两路。两路都命中的事件用 `0.4 × 图分 + 0.6 × 向量分 + 0.1`，单路命中也可以入围。先按合并分数取最多 5 条，再用 BM25 对这 5 条重排，最后根据事件 ID 附上对应的 Working。 [混合检索](../HGP-/memory/episodic_memory/episode_store.py#L600) · [QA 状态关联](../scripts/hgp_v2_membase_layer.py#L69)
+
 | v2 存储位置 | 复现行为 |
 | --- | --- |
 | Neo4j `v2-episodic`，另保留用户目录下的 episode JSONL | 复用 `EpisodeStore` 写事件和关联图。按原版普通模式以最近 5 条 episode 抽取状态并更新 Working。检索复用图和向量混合搜索。 |
@@ -62,6 +64,12 @@ Smoke 用受控输入核对语义替换、规则升版和 Working 归档。原�
 - 原版状态抽取在同一次响应里返回 `priority`（1–10，表示紧急程度）和 `confidence`（0–1，表示对状态推断的自评）。解析失败时使用原版回退值 `5` 和 `0.5`。Working 的归档仍按完成状态、暂停状态和时间选择。分类复判只返回标签，路由的置信度取 Qwen 分类头的最高 sigmoid 分数。 [原版状态字段](../HGP-/memory/episodic_memory/state_extractor.py#L184) · [原版分类触发](../HGP-/train/main.py#L99)
 - 原版语义画像、事件结构抽取、程序性规则和情节归纳沿用各自的 LLM 调用。Smoke 记录每个 DeepSeek 响应的模型和用量，并把可观察的写入失败记入消息日志。 [语义抽取](../HGP-/memory/semantic_memory/semantic_memory.py) · [事件抽取](../HGP-/memory/core/llm_extractor.py) · [规则抽取](../HGP-/memory/procedural_memory/procedural_memory.py) · [情节归纳](../HGP-/memory/episodic_memory/episodic_memory.py#L356)
 
+### Working 事件窗口与缓存
+
+- Neo4j 时间线把节点的 `episode_id` 映射为 Python 的 `Episode.id`，也兼容旧节点的 `id`。Working 取用户最近最多 **5** 条事件，再将这个窗口改为从旧到新送入提示词。每条新 Episodic 对应一次状态推断机会，结果写到触发消息所属会话。当需要保存事件正文时，窗口末尾是其中最新的事件。 [时间线读取](../HGP-/memory/episodic_memory/episode_store.py#L314) · [状态输入与写入](../HGP-/memory/episodic_memory/episodic_memory.py#L919)
+- `StateExtractor` 用完整窗口的有序事件 ID 元组做键。精确命中可跳过整个 Working LLM 请求。进程内最多缓存 **100** 份分析，写入第 101 份时移除最早加入的一份。缓存键和缓存容量只在进程内生效。持久化 Working 状态由 `state_trajectory.json` 保存，回放推断详情和事件到状态的引用由 `turns.jsonl` 保存。 [缓存实现](../HGP-/memory/episodic_memory/state_extractor.py#L85)
+- Working 推断失败时，原版用 **10** 作为默认总步数。状态优先级的 **1–10** 是独立评分。每个会话已有 **9** 个活跃节点时，新增节点会触发一次尝试归档。分类器增量训练缓冲的 **100** 条也是独立的设置。 [推断回退](../HGP-/memory/episodic_memory/state_extractor.py#L219) · [轨迹容量](../HGP-/memory/working_memory/state_trajectory.py#L93)
+
 ### 与 MobileMem Text 论文对比的 token 口径
 
 按论文表 1 的记忆构建口径，v2 用 MemBase 原生 token monitor 对每次请求的消息和返回正文计数，使用本仓库 RAG 和 Long Context 配置采用的本地 Qwen tokenizer。构建包括分类复判、记忆抽取、合并、Working 状态推断和回放结束后的归纳与 evolution。问答、裁判、检索阶段和本地向量编码不计入构建用量。每次请求同时保存 DeepSeek API 的 `usage` 原始字段，包括输入、输出及缓存明细，供账单核对。两套计数各自汇总到 `report.json` 的 `deepseek_construction`。 [MobileMem Text 论文，表 1](https://arxiv.org/html/2608.13606#S4.T1) · [DeepSeek 响应用量字段](https://api-docs.deepseek.com/api/create-chat-completion/)
@@ -88,3 +96,5 @@ Smoke20 报告只覆盖 20 条消息。全量对比时先按用户合计完整�
 全量入口 [run-hgp-v2-mobilemem.ps1](../scripts/run-hgp-v2-mobilemem.ps1) 按 Construct → Search → Eval 调度，每个阶段分别处理两条用户轨迹。[HGP v2 layer](../scripts/hgp_v2_membase_layer.py) 注册到本仓库的 MemBase，复用原有 runner 和已应用的 traced patch。Search 仍对每类最多取 5 条，命中的 Episodic 随附事件当时的 Working 状态。Eval 使用 MemBase 的默认问答和 MobileMem 判分提示，由 DeepSeek Flash 回答，DeepSeek V4 Pro 判分。原生 monitor 在各用户的 `construct/token_cost.json` 输出计数。Eval 的 patch 日志写到各用户的 `eval/deepseek-patch-usage.jsonl`，与按回答和 Judge 分开的 API 日志一道保留。
 
 两用户全量使用顺序适配。用户 2 的 Construct 从用户 1 完成时的分类头和阈值开始，继承训练轮次计数以延续阈值曲线。用户 2 的复判缓冲、训练样本、更新历史和各类记忆单独存放。初始 checkpoint、轮次和阈值写入用户 2 的 `construct/adaptive_start.json`。用户 1 若没有成功更新，用户 2 使用初始权重和阈值。这种设置的用户 2 结果包含跨用户适配。
+
+本次全量运行的用户 1 已用原版 Working 实现启动。上述窗口与缓存修复在用户 2 启动前部署，用户 2 的新进程会使用修复版。两位用户的 Construct 实现版本通过运行目录的 `working-construct-versions.json` 追溯，比较状态相关结果或 token 用量时应保留这个版本差异。

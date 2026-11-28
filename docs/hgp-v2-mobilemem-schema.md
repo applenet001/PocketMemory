@@ -93,7 +93,7 @@
 
 **更新和归档。** 首次调用 `start_state()`，之后用 `transition_to()`。每个会话的活跃状态达到 9 条时，原版尝试归档旧状态，依次优先已完成、已暂停、最早的历史状态。历史节点仍留在轨迹。原版容量归档在内存标记旧节点，写新节点时可能没有一并保存旧标记，重载后旧节点可能仍显示活跃。v2 的 Todo 提前归档则显式保存同一任务匹配状态的 `is_active=false` 和触发证据。**检索。** QA 先命中 Episodic，再依照回放记录定位该事件对应的历史 Working，附上状态名和进度。 [状态推断与写入](../HGP-/memory/episodic_memory/episodic_memory.py#L865) · [轨迹存储](../HGP-/memory/working_memory/state_trajectory.py) · [Todo 归档与 Working 关联](../scripts/run_hgp_v2_smoke.py#L182)
 
-**推断缓存。** 原版 `StateExtractor` 在进程内缓存最多 100 份状态分析结果。键取传入事件列表最后一项的 ID。命中可以复用分析、跳过 DeepSeek 推断；超出容量时移除最早放入的分析结果。持久化轨迹及其活跃状态有各自的规则。 [状态分析缓存](../HGP-/memory/episodic_memory/state_extractor.py#L85)
+**推断缓存。** 上游键只取事件列表的最后一项 ID。修复版把 Neo4j 的 `episode_id` 映射到 Python 的 `id`，将最近最多 5 条事件按从旧到新送入模型，并使用整个有序 ID 元组做键。进程中最多缓存 100 份分析。命中会跳过此次 DeepSeek 推断，超过容量时移除最早加入的一份。缓存中的键和分析不会自动写入轨迹，落盘的状态和活跃标记由 Working 独立管理。 [状态分析缓存](../HGP-/memory/episodic_memory/state_extractor.py#L85) · [回放说明](hgp-v2-mobilemem.md)
 
 ## 验证与追溯
 

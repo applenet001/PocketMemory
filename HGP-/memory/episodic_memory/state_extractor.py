@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -84,14 +84,12 @@ class ExtractedStateFromEpisodic:
 
 class StateExtractor:
 
-    _state_cache: Dict[str, Dict[str, Any]] = {}
+    _state_cache: Dict[Tuple[str, ...], Dict[str, Any]] = {}
     _cache_max_size: int = 100 
     
     @staticmethod
-    def _get_cache_key(recent_episodes: List[Episode]) -> str:
-        if not recent_episodes:
-            return "empty"
-        return recent_episodes[-1].id
+    def _get_cache_key(recent_episodes: List[Episode]) -> Tuple[str, ...]:
+        return tuple(episode.id for episode in recent_episodes)
     
     @staticmethod
     def extract_state(
