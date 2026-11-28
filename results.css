@@ -90,15 +90,22 @@ button:focus-visible { outline: 3px solid #236553; outline-offset: 3px; }
 .semantic-edges a { display: inline-block; margin-inline-start: 4px; color: #325e80; font-size: .8rem; }
 .tree-panel summary { cursor: pointer; font-weight: 650; }
 .tree-panel summary code { color: #815329; }
+.rule-trigger { color: #475550; font-size: .88rem; margin-bottom: 10px; }
 .tree-nodes { margin: 9px 0 0; padding-left: 2.1rem; margin-left: 10px; border-left: 2px solid #d8c1a8; }
 .tree-nodes li { padding: 2px 0; }
 .tree-nodes li::marker { color: #815329; }
 .tree-nodes li[aria-current="step"] { background: #f6eee3; border-radius: 4px; padding-inline: 4px; }
 .tree-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
 .tree-controls output { color: #815329; font-size: .86rem; }
+.rule-branch { margin-top: 5px; }
+.branch-cases { display: grid; gap: 8px; margin: 7px 0 0 6px; padding-inline-start: 10px; border-inline-start: 2px solid #d8c1a8; }
+.branch-cases > details { background: #faf7f0; border: 1px solid #e4d6c5; border-radius: 8px; padding: 8px; }
+.branch-cases p { margin: 4px 0 0 14px; }
 footer { margin-top: 20px; color: #475550; font-size: .88rem; }
 @media (max-width: 680px) {
   main { padding-top: 18px; }
   .cards, .routing ul, .graph-network, .semantic-groups { grid-template-columns: minmax(0, 1fr); }
   .graph-network { gap: 10px; }
+  .tree-nodes { padding-inline-start: 1.35rem; margin-inline-start: 3px; }
+  .branch-cases { margin-inline-start: 2px; padding-inline-start: 5px; }
 }
