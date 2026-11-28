@@ -7,8 +7,12 @@ import runpy
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
-from threading import Lock
+from contextlib import contextmanager
+from functools import lru_cache
+from threading import Lock, get_ident
+from time import perf_counter
 from urllib.parse import urlsplit
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,28 +21,89 @@ STAGES = {'construction': 'memory_construction.py', 'search': 'memory_search.py'
           'evaluation': 'memory_evaluation.py'}
 
 
-def log_openai_usage(stage):
+@lru_cache(maxsize=1)
+def membase_token_monitor():
+    tokenizer = str(ROOT / 'models/qwen3-embedding-0.6b/tokenizer.json')
+    if not Path(tokenizer).is_file():
+        raise FileNotFoundError(tokenizer)
+    with patch.dict(os.environ, {'LITELLM_LOCAL_MODEL_COST_MAP': 'True'}):
+        module = runpy.run_path(str(MEMBASE / 'membase/utils/token_monitor.py'))
+    manager = module['CostStateManager']
+    manager.register(tokenizer, state=module['CostState'](window_size=0))
+    return manager, tokenizer
+
+
+def count_membase_tokens(messages, response, elapsed, *, state_manager=None, model_key=None):
+    manager, tokenizer = (state_manager, model_key) if state_manager is not None else membase_token_monitor()
+    result = {'input': {'messages': messages},
+              'output': {'messages': response.choices[0].message.content or ''},
+              'elapsed': elapsed}
+    manager.update(tokenizer, result)
+    return {key + '_tokens': result[key][key + '_tokens'] for key in ('input', 'output')}
+
+
+def log_openai_usage(stage, *, record_missing=False, monitor_tokens=False):
     destination = os.getenv('HGP_DEEPSEEK_USAGE_LOG')
     if not destination:
         return
     from openai.resources.chat.completions import Completions
 
-    original = Completions.create
+    if monitor_tokens:
+        membase_token_monitor()
+    Completions.create = usage_logger(Completions.create, stage, destination,
+                                      record_missing=record_missing, monitor_tokens=monitor_tokens)
+
+
+def usage_logger(original, stage, destination, *, record_missing=False, thread_id=None, fields=None, monitor_tokens=False,
+                 token_counter=count_membase_tokens):
     lock = Lock()
 
+    def record(entry):
+        with lock, Path(destination).open('a', encoding='utf-8') as file:
+            file.write(json.dumps(entry) + '\n')
+
     def logged(resource, *args, **kwargs):
+        if thread_id is not None and get_ident() != thread_id:
+            return original(resource, *args, **kwargs)
         if stage in ('construction', 'search') and str(kwargs.get('model', '')).startswith('deepseek'):
             kwargs['extra_body'] = {**(kwargs.get('extra_body') or {}), 'thinking': {'type': 'disabled'}}
-        response = original(resource, *args, **kwargs)
+        requested_model = kwargs.get('model')
+        entry = dict(timestamp=datetime.now(timezone.utc).isoformat(), stage=stage, **(fields or {}))
+        started = perf_counter()
+        try:
+            response = original(resource, *args, **kwargs)
+        except Exception as error:
+            if record_missing:
+                record(dict(**entry, requested_model=requested_model, model=requested_model, usage=None,
+                            response_id=getattr(error, 'request_id', None), error_type=type(error).__name__))
+            raise
         usage = getattr(response, 'usage', None)
-        if usage is not None:
-            entry = dict(timestamp=datetime.now(timezone.utc).isoformat(), stage=stage,
-                         model=getattr(response, 'model', kwargs.get('model')), usage=usage.model_dump())
-            with lock, Path(destination).open('a', encoding='utf-8') as file:
-                file.write(json.dumps(entry) + '\n')
+        if usage is not None or record_missing:
+            entry.update(model=getattr(response, 'model', None) or requested_model,
+                         usage=usage.model_dump() if usage is not None else None)
+            if record_missing:
+                entry.update(requested_model=requested_model, response_id=getattr(response, 'id', None))
+            if monitor_tokens:
+                try:
+                    entry['membase_tokens'] = token_counter(kwargs['messages'], response, perf_counter() - started)
+                except Exception as error:
+                    entry['membase_monitor_error'] = type(error).__name__
+            record(entry)
         return response
 
-    Completions.create = logged
+    return logged
+
+
+@contextmanager
+def scoped_openai_usage(stage, destination, *, monitor_tokens=False, **fields):
+    from openai.resources.chat.completions import Completions
+
+    if monitor_tokens:
+        membase_token_monitor()
+    logged = usage_logger(Completions.create, stage, destination, record_missing=True,
+                          thread_id=get_ident(), fields=fields, monitor_tokens=monitor_tokens)
+    with patch.object(Completions, 'create', logged):
+        yield
 
 
 def bootstrap_password(env_file):

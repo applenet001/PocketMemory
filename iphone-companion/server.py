@@ -25,7 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 import uuid
 from contextlib import contextmanager
-from graph import LocalGraph, PERSONAL_VIEWS
+from graph import LocalGraph, PERSONAL_VIEWS, V2_VIEWS
 from local_memory import LocalMemories
 from accounts import Accounts, graph_namespace
 from experiment_profile import (ExperimentConfigUnavailable, evaluated_user_names, evaluated_users,
@@ -36,12 +36,13 @@ from semantic_search import MAX_QUERY_LENGTH, search_meaning
 from memory_draft import (MEMORY_LABELS, make_draft, memory_body, memory_evidence, memory_labels,
                           ocr_lines, readable_lines)
 from classifier import InboxClassifier
+from v2_memory import CompanionV2, shortcut_fields
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / 'vendor'))
 MAX_BODY = 30 * 1024 * 1024
 MAX_FILE = 20 * 1024 * 1024
-MEMORY_COLUMNS = 'id,created,title,text,note,url,name,mime,status,classification,graph_state,processing,source_app,draft,feedback'
+MEMORY_COLUMNS = 'id,created,title,text,note,url,name,mime,status,classification,graph_state,processing,source_app,draft,feedback,v2_state'
 
 
 def shared_image_name(content):
@@ -93,7 +94,7 @@ class Store:
             db.execute('CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, created TEXT, title TEXT, text TEXT, note TEXT, url TEXT, name TEXT, mime TEXT, status TEXT, digest TEXT UNIQUE, content BLOB)')
             db.execute('BEGIN IMMEDIATE')
             columns = {column['name'] for column in db.execute('PRAGMA table_info(memories)')}
-            for column in ('classification', 'graph_state', 'processing', 'source_app', 'draft', 'ocr', 'feedback'):
+            for column in ('classification', 'graph_state', 'processing', 'source_app', 'draft', 'ocr', 'feedback', 'v2_state'):
                 if column not in columns:
                     db.execute(f'ALTER TABLE memories ADD COLUMN {column} TEXT')
             db.execute('CREATE TABLE IF NOT EXISTS memory_feedback (memory_id TEXT, revision INTEGER, event TEXT NOT NULL, PRIMARY KEY (memory_id, revision))')
@@ -167,14 +168,14 @@ class Store:
                 return '', '图片识别失败，原件已保存，可补充说明', []
         return '', '原件已保存，此格式暂无正文提取', []
 
-    def add(self, text='', note='', content=None, name='', title='', source_app='', defer=False):
+    def add(self, text='', note='', content=None, name='', title='', source_app='', defer=False, v2_state=None):
         text, note, title = str(text).strip(), str(note).strip(), str(title).strip()
         if not isinstance(source_app, str) or len(source_app.strip()) > 120:
             raise ValueError('来源 App 必须是 120 字以内的文本')
         source_app = source_app.strip()
         if len(text) > 200000 or len(note) > 10000 or len(title) > 300:
             raise ValueError('文字、备注或标题过长')
-        if not text and not content:
+        if not text and not content and not (v2_state or {}).get('todo', {}).get('is_completed'):
             raise ValueError('请分享文字、链接或文件')
         if content and len(content) > MAX_FILE:
             raise ValueError('单个文件不能超过 20 MB')
@@ -182,6 +183,8 @@ class Store:
         if content and not name:
             name = 'attachment.bin'
         parts = [text, note, name, source_app] if source_app else [text, note, name]
+        if v2_state and v2_state.get('todo'):
+            parts.append(v2_state['todo'])
         digest = hashlib.sha256(json.dumps(parts, ensure_ascii=False).encode() + (content or b'')).hexdigest()
         with self.connect() as db:
             row = db.execute('SELECT id FROM memories WHERE digest=?', (digest,)).fetchone()
@@ -193,16 +196,17 @@ class Store:
         if url:
             status = '链接已保存；未自动抓取网页正文'
         item = dict(id=uuid.uuid4().hex, created=datetime.now(timezone.utc).isoformat(),
-                    title=title or name or text[:80], text=text, note=note, url=url, source_app=source_app,
+                    title=title or name or text[:80] or 'Todo 完成记录', text=text, note=note, url=url, source_app=source_app,
                     name=name, mime=mimetypes.guess_type(name)[0] or 'application/octet-stream',
                     status=status, digest=digest)
         draft = None if defer and content else make_draft(item, extracted)
         item['text'] = '\n'.join(filter(None, (text, extracted)))[:200000]
         with self.connect() as db:
             cursor = db.execute('''INSERT OR IGNORE INTO memories
-                (id,created,title,text,note,url,name,mime,status,digest,content,processing,source_app,draft,ocr)
-                VALUES (:id,:created,:title,:text,:note,:url,:name,:mime,:status,:digest,:content,:processing,:source_app,:draft,:ocr)''',
+                (id,created,title,text,note,url,name,mime,status,digest,content,processing,source_app,draft,ocr,v2_state)
+                VALUES (:id,:created,:title,:text,:note,:url,:name,:mime,:status,:digest,:content,:processing,:source_app,:draft,:ocr,:v2_state)''',
                 {**item, 'content': content, 'draft': json.dumps(draft) if draft else None, 'ocr': json.dumps(blocks) if blocks else None,
+                 'v2_state': json.dumps(v2_state) if v2_state is not None else None,
                  'processing': 'extract' if defer and content else 'queued' if defer else None})
             inserted = cursor.rowcount == 1
             row = db.execute('SELECT id FROM memories WHERE digest=?', (digest,)).fetchone()
@@ -217,7 +221,7 @@ class Store:
     @staticmethod
     def decode(row):
         record = dict(row)
-        for field in ('classification', 'draft', 'feedback', 'ocr'):
+        for field in ('classification', 'draft', 'feedback', 'ocr', 'v2_state'):
             if record.get(field):
                 record[field] = json.loads(record[field])
         return record
@@ -264,14 +268,21 @@ class Store:
             result = {'status': 'classified', 'source': 'user', 'uncertain': False,
                       'label': label, 'labels': labels, 'working_state': feedback['working_state']}
             graph_state = item['graph_state']
-            if self.graph_eligible({'classification': result}):
+            v2_state = item['v2_state']
+            if item['v2_state'] is not None:
+                graph_state = None
+                if not v2_state.get('types') and correction['text']:
+                    v2_state.pop('prediction', None)
+                    v2_state['complete'] = False
+            elif self.graph_eligible({'classification': result}):
                 graph_state = 'pending'
             elif graph_state:
                 graph_state = 'remove_pending'
             db.execute('INSERT INTO memory_feedback VALUES (?, ?, ?)', (identity, feedback['revision'],
                        json.dumps({**feedback, 'previous_classification': item['classification']})))
-            db.execute('UPDATE memories SET feedback=?,classification=?,graph_state=? WHERE id=?',
-                       (json.dumps(feedback), json.dumps(result), graph_state, identity))
+            db.execute('UPDATE memories SET feedback=?,classification=?,graph_state=?,v2_state=? WHERE id=?',
+                       (json.dumps(feedback), json.dumps(result), graph_state,
+                        json.dumps(v2_state) if v2_state is not None else None, identity))
         return self.get(identity)
 
     def feedback_examples(self):
@@ -357,7 +368,23 @@ class Store:
         return deleted
 
     def sync_local(self):
-        LocalMemories(self.root / 'hgp' / 'uploads').write_uploads(self.list())
+        LocalMemories(self.root / 'hgp' / 'uploads').write_uploads(
+            [item for item in self.list() if item['v2_state'] is None])
+
+    def sync_v2(self, identity, backend, user_id):
+        with self.graph_lock:
+            item = self.get(identity)
+            if not item or item['v2_state']['complete']:
+                return
+
+            def checkpoint(state):
+                with self.connect() as db:
+                    db.execute("UPDATE memories SET v2_state=? WHERE id=?", (json.dumps(state), identity))
+
+            result = backend.ingest(self.root / 'hgp' / 'v2', user_id, item, checkpoint)
+            with self.connect() as db:
+                db.execute("UPDATE memories SET v2_state=?,classification=?,processing='complete' WHERE id=?",
+                           (json.dumps(item['v2_state']), json.dumps(result), identity))
 
     def workflows(self):
         reader = LocalMemories(self.root / 'hgp')
@@ -371,7 +398,8 @@ class Store:
                 groups.append(group)
         for source in reader.sources('procedural'):
             for rule in reader.read('procedural', source['id'])['rules']:
-                identity = (rule.get('meta') or {}).get('source_id')
+                meta = rule.get('meta') or {}
+                identity = meta.get('message_id') or meta.get('source_id')
                 rule['upload_id'] = identity if identity in records else None
                 rules.append(rule)
         groups.sort(key=lambda group: max((node.get('timestamp') or '' for node in group['nodes']), default=''), reverse=True)
@@ -379,7 +407,8 @@ class Store:
         return {'working': groups, 'procedural': rules}
 
 
-def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classifier=None, upload_graph=None, background=True):
+def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classifier=None, upload_graph=None,
+                background=True, v2_backend=None):
     answers = SearchAnswers()
     accounts = Accounts(store.root, token)
     stores = {'owner': store}
@@ -401,6 +430,12 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
                            WHERE id=? AND processing='extract'""",
                            ('\n'.join(filter(None, (item['text'], text)))[:200000], status, json.dumps(draft),
                             json.dumps(blocks) if blocks else None, identity))
+        if item['v2_state'] is not None:
+            if not item['v2_state']['complete']:
+                with personal.connect() as db:
+                    db.execute("UPDATE memories SET processing='syncing' WHERE id=?", (identity,))
+                personal.sync_v2(identity, v2_backend, user_id)
+            return
         with personal.connect() as db:
             db.execute("UPDATE memories SET processing='classifying' WHERE id=?", (identity,))
         item = personal.get(identity)
@@ -437,7 +472,12 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
 
     def schedule(personal, identity, user_id):
         if not background:
-            process(personal, identity, user_id)
+            try:
+                process(personal, identity, user_id)
+            except Exception:
+                with personal.connect() as db:
+                    db.execute("UPDATE memories SET processing='failed' WHERE id=?", (identity,))
+                raise
         else:
             key = (str(personal.root), identity)
             with jobs_lock:
@@ -454,7 +494,9 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
         with stores_lock:
             if user['id'] not in stores:
                 stores[user['id']] = Store(store.root / 'users' / user['id'])
-                for item in stores[user['id']].list():
+                for item in reversed(stores[user['id']].list()):
+                    if v2_backend and item['v2_state'] is None:
+                        continue
                     schedule(stores[user['id']], item['id'], user['id'])
             return stores[user['id']]
 
@@ -560,7 +602,7 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
                 return self.send(401, {'error': '请使用自己的访问密钥登录'})
             personal = user_store(self.user)
             if parsed.path == '/api/me':
-                return self.send(200, {'user': self.user})
+                return self.send(200, {'user': self.user, 'memory_version': 2 if v2_backend else 1})
             if parsed.path == '/api/admin/users':
                 if self.user['role'] != 'admin':
                     return self.send(403, {'error': '仅管理员可以管理用户'})
@@ -646,9 +688,13 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
                     namespace = params.get('namespace', [''])[0]
                     database = params.get('database', ['episodic'])[0]
                     experiment_user = params.get('user', [''])[0]
-                    if database not in PERSONAL_VIEWS and self.user['role'] != 'admin':
+                    if database not in (*PERSONAL_VIEWS, *V2_VIEWS) and self.user['role'] != 'admin':
                         return self.send(403, {'error': '仅管理员可以查看实验图'})
                     allowed = graph_namespace(self.user['id']) if database in PERSONAL_VIEWS else None
+                    if database in V2_VIEWS:
+                        if not v2_backend or experiment_user:
+                            return self.send(400, {'error': '这个视图只读取当前账号的 HGP v2 记忆'})
+                        allowed = v2_backend.namespace(personal.root / 'hgp' / 'v2', self.user['id'])
                     if experiment_user:
                         if self.user['role'] != 'admin' or database in PERSONAL_VIEWS:
                             return self.send(403, {'error': '这个视图不支持指定实验用户'})
@@ -728,8 +774,13 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
                 match = re.fullmatch(r'/api/memories/([a-f0-9]{32})/feedback', path)
                 if match:
                     personal = user_store(self.user)
-                    if not personal.record_feedback(match[1], json.loads(self.read_body())):
+                    item = personal.record_feedback(match[1], json.loads(self.read_body()))
+                    if not item:
                         return self.send(404, {'error': '记忆不存在'})
+                    if item['v2_state'] is not None:
+                        if not item['v2_state']['complete']:
+                            schedule(personal, item['id'], self.user['id'])
+                        return self.send(200, {'item': personal.get(match[1], detail=True)})
                     with personal.graph_lock:
                         personal.sync_local()
                     personal.sync_graph(match[1], upload_graph, graph_namespace(self.user['id']))
@@ -771,7 +822,7 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
                         data = part.get_payload(decode=True) or b''
                         if filename is not None:
                             files.append((filename, data))
-                        elif field in {'text', 'note', 'title', 'file', 'source_app'}:
+                        elif field in {'text', 'note', 'title', 'file', 'source_app', 'todo_id', 'is_completed'}:
                             values['text' if field == 'file' else field] = data.decode('utf-8', errors='replace')
                     if len(files) > 1:
                         raise ValueError('每次分享一个文件；多个文件请在快捷指令中逐项重复')
@@ -792,6 +843,18 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
                         if payload.get('base64'):
                             values['content'] = base64.b64decode(payload['base64'], validate=True)
                     values['source_app'] = payload.get('source_app', '')
+                    for key in ('todo_id', 'is_completed'):
+                        if key in payload:
+                            values[key] = payload[key]
+                todo = shortcut_fields(values)
+                values.pop('todo_id', None)
+                values.pop('is_completed', None)
+                if todo:
+                    if not v2_backend:
+                        raise ValueError('Structured Todo uploads require HGP v2')
+                    values['source_app'] = 'Todo'
+                if v2_backend:
+                    values['v2_state'] = {'complete': False, 'todo': todo}
                 personal = user_store(self.user)
                 item, created = personal.add(**values, defer=background)
                 if item:
@@ -813,7 +876,12 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
             personal = user_store(self.user)
             with personal.graph_lock:
                 item = personal.get(match[1])
-                if upload_graph and item and item['graph_state'] in {'synced', 'pending', 'remove_pending'}:
+                if item and item['v2_state'] is not None:
+                    try:
+                        v2_backend.delete(personal.root / 'hgp' / 'v2', self.user['id'], item)
+                    except Exception:
+                        return self.send(503, {'error': 'HGP v2 删除待重试，已保留源记录'})
+                elif upload_graph and item and item['graph_state'] in {'synced', 'pending', 'remove_pending'}:
                     try:
                         upload_graph.delete_upload(graph_namespace(self.user['id']), item['id'])
                     except Exception:
@@ -826,13 +894,17 @@ def make_server(store, token, host='127.0.0.1', port=8766, secure=False, classif
             if background:
                 jobs.put(None)
                 processing_thread.join(timeout=2)
+            if v2_backend and (not background or not processing_thread.is_alive()):
+                v2_backend.close()
 
     server = MemoryServer((host, port), Handler)
     if background:
         for user in accounts.list():
             personal = user_store(user)
             if user['id'] == 'owner':
-                for item in personal.list():
+                for item in reversed(personal.list()):
+                    if v2_backend and item['v2_state'] is None:
+                        continue
                     schedule(personal, item['id'], user['id'])
     return server
 
@@ -855,7 +927,7 @@ def main():
     if bool(args.tls_cert) != bool(args.tls_key):
         parser.error('--tls-cert and --tls-key must be provided together')
     server = make_server(store, token, args.host, args.port, secure=bool(args.tls_cert),
-                         classifier=InboxClassifier(), upload_graph=LocalGraph())
+                         classifier=InboxClassifier(), upload_graph=LocalGraph(), v2_backend=CompanionV2())
     scheme = 'http'
     if args.tls_cert:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

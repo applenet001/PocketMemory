@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DATABASES = ('semantic', 'episodic')
 PERSONAL_DATABASE = 'usermemory'
 PERSONAL_VIEWS = ('personal-semantic', 'personal-episodic')
+V2_VIEWS = ('v2-episodic', 'v2-semantic')
 FIELDS = ('name', 'title', 'content', 'text', 'timestamp', 'episode_id', 'user_id', 'namespace', 'relation', 'value', 'type')
 
 
@@ -116,8 +117,10 @@ class LocalGraph:
 
     def view(self, database='episodic', namespace='', allowed_namespace=None):
         from neo4j import Query, READ_ACCESS
-        if database not in (*DATABASES, *PERSONAL_VIEWS):
+        if database not in (*DATABASES, *PERSONAL_VIEWS, *V2_VIEWS):
             raise ValueError('未知的图视图')
+        if database in V2_VIEWS and allowed_namespace is None:
+            raise ValueError('HGP v2 graph views require an account namespace')
         route = database.removeprefix('personal-') if database in PERSONAL_VIEWS else None
         target = PERSONAL_DATABASE if route else database
         if allowed_namespace is not None and namespace and namespace != allowed_namespace:
@@ -132,7 +135,7 @@ class LocalGraph:
             if not namespace:
                 return {'database': database, 'scopes': scopes, 'nodes': [], 'edges': [], 'limit': 80}
             projection = ('n{.title,.content,.source_id,.source_app,.saved_at,.confidence,.route}' if route else
-                          'n{.name,.title,.content,.text,.timestamp,.episode_id,.user_id,.namespace,.relation,.value,.type}')
+                          'n{.name,.title,.content,.text,.timestamp,.episode_id,.user_id,.namespace,.relation,.value,.type,.source_app}')
             order = 'n.saved_at DESC, n.source_id, elementId(n)' if route else 'elementId(n)'
             edge_filter = (' AND $route IN coalesce(a.routes, [a.route]) AND $route IN coalesce(b.routes, [b.route])'
                            ' AND NOT a:UploadSource AND NOT b:UploadSource' if route else '')

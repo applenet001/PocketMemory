@@ -12,9 +12,57 @@ from unittest.mock import Mock
 from local_memory import LocalMemories
 from memory_draft import ocr_lines
 from server import Store, make_server
+from v2_memory import CompanionV2
 
 
 class ProcessingTests(unittest.TestCase):
+    def test_v2_shortcut_uses_one_account_scoped_entry_after_extraction(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = Store(folder)
+            legacy, _ = store.add(text='Legacy inbox item')
+            legacy_classifier = Mock()
+            legacy_graph = Mock()
+            backend = Mock(spec=CompanionV2)
+            token = 'x' * 40
+
+            def ingest(target, user_id, item, checkpoint):
+                self.assertEqual(target, Path(folder) / 'hgp' / 'v2')
+                self.assertEqual(user_id, 'owner')
+                self.assertEqual(item['text'], 'Scanned Todo')
+                self.assertEqual(item['v2_state']['todo'], {'todo_id': 'task-1', 'is_completed': True})
+                item['v2_state'].update(complete=True, types=['episodic', 'working'])
+                return {'status': 'classified', 'label': 'episodic', 'working_state': True}
+
+            backend.ingest.side_effect = ingest
+            server = make_server(store, token, port=0, classifier=legacy_classifier,
+                                 upload_graph=legacy_graph, v2_backend=backend)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            payload = {'name': 'task.png', 'base64': base64.b64encode(b'image').decode(),
+                       'source_app': 'Todo', 'todo_id': 'task-1', 'is_completed': True}
+            request = Request(f'http://127.0.0.1:{server.server_port}/api/memories',
+                              data=json.dumps(payload).encode(),
+                              headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+            try:
+                with unittest.mock.patch.object(store, 'extract', return_value=('Scanned Todo', 'OCR', [])):
+                    with urlopen(request, timeout=5) as response:
+                        identity = json.load(response)['item']['id']
+                    deadline = time.monotonic() + 5
+                    while store.get(identity)['processing'] not in ('complete', 'failed') and time.monotonic() < deadline:
+                        time.sleep(.02)
+                    self.assertEqual(store.get(identity)['processing'], 'complete')
+                    with urlopen(request, timeout=5) as response:
+                        self.assertEqual(response.status, 200)
+                        self.assertEqual(json.load(response)['item']['id'], identity)
+                backend.ingest.assert_called_once()
+                self.assertIsNone(store.get(legacy['id'])['v2_state'])
+                legacy_classifier.assert_not_called()
+                legacy_graph.write_upload.assert_not_called()
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
     def test_ocr_draft_excludes_garble_but_retains_raw_lines(self):
         blocks = ocr_lines(SimpleNamespace(txts=['Boarding at 7:15', '\ufffd\ufffd?', 'Garbled'],
                                            boxes=[[[1, 2], [3, 4]]] * 3, scores=[.98, .99, .55]))

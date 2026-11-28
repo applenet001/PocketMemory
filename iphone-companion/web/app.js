@@ -62,7 +62,7 @@ for (const name of tabs) $('tab-' + name).onclick = () => {
 
 async function openWorkspace() {
   try {
-    const { user } = await api('/api/me');
+    const { user, memory_version } = await api('/api/me');
     signedInRole = user.role;
     const admin = user.role === 'admin';
     for (const name of ['admin', 'experiment', 'experiment-search']) $('tab-' + name).hidden = !admin;
@@ -73,6 +73,9 @@ async function openWorkspace() {
     const graphViews = admin
       ? [['实验记录 · 事件', 'episodic'], ['实验记录 · 偏好与概念', 'semantic']]
       : [['我的事件', 'personal-episodic'], ['我的偏好与概念', 'personal-semantic']];
+    if (!admin && memory_version === 2) {
+      graphViews.unshift(['我的事件 · HGP v2', 'v2-episodic'], ['我的偏好与概念 · HGP v2', 'v2-semantic']);
+    }
     $('graph-database').replaceChildren(...graphViews.map(([label, value]) => new Option(label, value)));
     $('graph-scope-label').textContent = admin ? '评测用户' : '数据空间';
     $('account-name').textContent = user.name + (admin ? ' · 管理员' : ' · 个人记忆库');
@@ -230,6 +233,14 @@ function detail(item) {
     : result?.uncertain ? '分类置信度低，暂留在记忆库'
     : eligible ? '可同步到个人 Neo4j 图' : '';
   $('graph-sync').hidden = item.graph_state !== 'remove_pending' && (!eligible || item.graph_state === 'synced');
+  if (item.v2_state) {
+    const types = item.v2_state.types || [];
+    const archived = item.v2_state.working_archived?.length || 0;
+    const summary = [types.length ? 'HGP v2 · ' + types.map(type => routeNames[type] || '工作状态').join('、') : '',
+      archived ? `已归档 ${archived} 个 Todo 工作状态` : ''].filter(Boolean);
+    $('detail-graph-status').textContent = summary.join(' · ');
+    $('graph-sync').hidden = true;
+  }
   const preview = memoryPreview(item);
   const extracted = item.draft?.body || '';
   $('detail-text').textContent = preview || '暂无可检索正文，可打开原件查看。';
@@ -261,7 +272,9 @@ $('feedback-form').onsubmit = async event => {
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if ($('detail').open && current?.id === id) {
       detail(item);
-      $('feedback-status').textContent = '已保存更正并更新归类。';
+      $('feedback-status').textContent = item.v2_state?.types?.length
+        ? '已更新收件箱。已生成的 HGP v2 记忆保留原始提取结果。'
+        : '已保存更正并更新归类。';
     }
     resetPersonalPortrait();
     await reload();
@@ -397,7 +410,7 @@ async function loadGraph(reset = false) {
         $('graph-technical').hidden = false;
         $('graph-technical').open = false;
         $('graph-technical-data').textContent = JSON.stringify(fields, null, 2);
-        const source = node.properties.source_id;
+        const source = node.properties.source_id || (database === 'v2-episodic' ? node.properties.episode_id : null);
         $('graph-source').hidden = !source;
         $('graph-source').onclick = source ? async () => {
           try {

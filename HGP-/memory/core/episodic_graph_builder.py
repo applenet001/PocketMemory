@@ -107,6 +107,7 @@ class EpisodicGraphBuilder:
         persons: Optional[List[str]] = None,
         topics: Optional[List[str]] = None,
         namespace: str = "default",
+        source_app: Optional[str] = None,
     ) -> bool:
         try:
             with self.driver.session(database=self.database) as session:
@@ -121,6 +122,7 @@ class EpisodicGraphBuilder:
                         e.event_type = $event_type,
                         e.execution_status = $execution_status,
                         e.embedding = $embedding,
+                        e.source_app = coalesce($source_app, e.source_app),
                         e.updated_at = datetime()
                     """,
                     episode_id=episode_id,
@@ -129,6 +131,7 @@ class EpisodicGraphBuilder:
                     event_type=event_type,
                     execution_status=execution_status,
                     embedding=episode_embedding,
+                    source_app=source_app,
                     namespace=namespace
                 )
 

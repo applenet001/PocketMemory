@@ -870,6 +870,7 @@ def extract_state_from_episodes(
     auto_update_working_memory: bool = True,
     metadata: Optional[Dict[str, Any]] = None, 
     namespace: Optional[str] = None, 
+    working_timestamp: Optional[str] = None,
 ) -> Dict[str, Any]:
     from .state_extractor import StateExtractor
     
@@ -941,7 +942,8 @@ def extract_state_from_episodes(
         if auto_update_working_memory:
             wm_update = _update_working_memory_with_state(
                 extracted_state=extracted_state,
-                session_id=session_id
+                session_id=session_id,
+                timestamp=working_timestamp,
             )
             result["working_memory_update"] = wm_update
     
@@ -950,7 +952,8 @@ def extract_state_from_episodes(
 
 def _update_working_memory_with_state(
     extracted_state,
-    session_id: Optional[str] = None
+    session_id: Optional[str] = None,
+    timestamp: Optional[str] = None,
 ) -> Dict[str, Any]:
 
     try:
@@ -971,6 +974,7 @@ def _update_working_memory_with_state(
                 reason=f"Inferring from the sequence of events: {extracted_state.episode_chain_summary}",
                 priority=extracted_state.priority,
                 episode_id="episodic",
+                timestamp=timestamp,
             )
         else:
             node_id = wm.start_state(
@@ -978,6 +982,7 @@ def _update_working_memory_with_state(
                 content=content,
                 episode_id="episodic",
                 priority=extracted_state.priority,
+                timestamp=timestamp,
             )
         
         return {

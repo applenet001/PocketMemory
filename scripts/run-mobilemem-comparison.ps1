@@ -29,11 +29,14 @@ if (Test-Path -LiteralPath $localEnv) {
         if ($line -match '^\s*([A-Z][A-Z0-9_]*)\s*=(.*)$') {
             $envName=$Matches[1]
             $envValue=$Matches[2].Trim().Trim('"').Trim("'")
-            if ($envName -in @('DEEPSEEK_API_KEY','DEEPSEEK_BASE_URL','DEEPSEEK_MODEL','HGP_EMBEDDING_API_KEY') -and $envValue) {
+            if ($envName -in @('DEEPSEEK_API_KEY','DEEPSEEK_BASE_URL','DEEPSEEK_MODEL','JUDGE_MODEL','HGP_EMBEDDING_API_KEY') -and $envValue) {
                 [Environment]::SetEnvironmentVariable($envName,$envValue,'Process')
             }
         }
     }
+}
+if (!$PSBoundParameters.ContainsKey('JudgeModel') -and $env:JUDGE_MODEL) {
+    $JudgeModel=$env:JUDGE_MODEL
 }
 $repo=Join-Path $workspace 'MemBase'
 $example=Join-Path $repo 'examples/evaluate_memory_systems_on_mobilemem'

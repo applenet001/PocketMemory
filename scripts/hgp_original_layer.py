@@ -16,6 +16,7 @@ from rank_bm25 import BM25Okapi
 
 from hgp3_router import AdaptiveRouter, deepseek_route, local_encoder
 from hgp_neo4j_layer import HGPConfig, id_for, settings
+from mobilemem_source import mobilemem_source_app
 from train_hgp3_2200 import ROOT
 
 
@@ -44,15 +45,16 @@ def build_hgp_qa_context(memories):
     for entry in memories:
         meta = entry.metadata
         kind = meta.get('kind')
+        provenance = {'source_app': meta['source_app']} if meta.get('source_app') else {}
         if kind == 'semantic':
             relation, separator, entity = entry.content.partition(': ')
             item = dict(relation=relation, entity=entity) if separator else dict(content=entry.content)
-            results.semantic.append(dict(item, similarity=meta.get('score')))
+            results.semantic.append(dict(item, similarity=meta.get('score'), **provenance))
         elif kind == 'episodic':
             timestamp, separator, text = entry.content.partition('] ')
             if not separator or not timestamp.startswith('['):
                 timestamp, text = '', entry.content
-            results.episodic.append(dict(timestamp=timestamp.lstrip('['), content=text, score=meta.get('score')))
+            results.episodic.append(dict(timestamp=timestamp.lstrip('['), content=text, score=meta.get('score'), **provenance))
         elif kind == 'procedural':
             rule = meta.get('rule')
             if rule is None:
@@ -60,12 +62,12 @@ def build_hgp_qa_context(memories):
                 conditions, has_steps, steps = tail.partition(' THEN ')
                 rule = dict(title=title, if_conditions=conditions.split('; ') if conditions else [],
                             then_steps=steps.split(' → ') if steps else []) if has_conditions and has_steps else entry.content
-            results.procedural.append(dict(rule=rule))
+            results.procedural.append(dict(rule=rule, **provenance))
         elif kind == 'working':
             if 'state_id' in meta:
-                working_history.append(dict(timestamp=meta['timestamp'], text=entry.content))
+                working_history.append(dict(timestamp=meta['timestamp'], text=entry.content, **provenance))
             else:
-                results.working = dict(state_name=entry.content[:50], content=dict(focus=entry.content))
+                results.working = dict(state_name=entry.content[:50], content=dict(focus=entry.content), **provenance)
 
     history = None if results.working and not working_history else working_history
     return results.to_context(max_items=len(memories), working_history=history)
@@ -349,6 +351,9 @@ class OriginalHGPLayer(MemBaseLayer):
         kinds = [kind for kind in (result['label'], 'working' if result['working_state'] else None) if kind]
         metadata = dict(source_message_id=message.id, timestamp=message.timestamp,
                         role=message.role, name=message.name)
+        source_app = mobilemem_source_app(message.role, message.name)
+        if source_app:
+            metadata['source_app'] = source_app
         for kind in kinds:
             if self.ledger.execute('SELECT 1 FROM writes WHERE id=? AND kind=?', (message.id, kind)).fetchone():
                 continue
@@ -408,6 +413,8 @@ class OriginalHGPLayer(MemBaseLayer):
         entries = []
 
         def append(kind, text, source, *, formatted_content=None, **metadata):
+            if metadata.get('source_app') is None:
+                metadata.pop('source_app', None)
             entries.append(MemoryEntry(content=text, formatted_content=f'[{kind}] {formatted_content or text}',
                                        metadata=dict(kind=kind, kinds=[kind], source_id=source, **metadata)))
 
@@ -415,12 +422,13 @@ class OriginalHGPLayer(MemBaseLayer):
             evidence_ids = triple.get('evidence_ids') or []
             append('semantic', f'{triple["relation"]}: {triple["entity"]}',
                    evidence_ids[0] if evidence_ids else None,
-                   evidence_ids=evidence_ids, score=triple.get('similarity'))
+                   evidence_ids=evidence_ids, score=triple.get('similarity'), source_app=triple.get('source_app'))
         for item in result.episodic:
             episode = self._store('episodic').get_episode(item['episode_id'])
             source = episode.metadata.get('source_message_id') if episode else None
             append('episodic', f'[{item["timestamp"]}] {item["content"]}', source,
-                   score=float(item['score']), episode_id=item['episode_id'])
+                   score=float(item['score']), episode_id=item['episode_id'],
+                   source_app=episode.metadata.get('source_app') if episode else None)
         for number, item in enumerate(result.procedural, 1):
             rule = item['rule']
             conditions = '; '.join(rule['if_conditions'])
@@ -429,12 +437,13 @@ class OriginalHGPLayer(MemBaseLayer):
             context = format_procedural_rule(rule, number)
             qa_rule = {field: rule[field] for field in ('title', 'if_conditions', 'then_steps')}
             append('procedural', f'{heading} {steps}', rule['meta'].get('source_message_id'),
-                   formatted_content=context, score=float(item['score']), rule=qa_rule)
+                   formatted_content=context, score=float(item['score']), rule=qa_rule, source_app=rule['meta'].get('source_app'))
 
         for state, score in working:
             content = state['content']
             append('working', content['text'], content.get('source_message_id'),
-                   state_id=state['state_id'], timestamp=state['timestamp'], priority=state['priority'], score=score)
+                   state_id=state['state_id'], timestamp=state['timestamp'], priority=state['priority'], score=score,
+                   source_app=content.get('source_app'))
         return entries
 
     def delete(self, memory_id):

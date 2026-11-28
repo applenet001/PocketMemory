@@ -25,6 +25,7 @@ class MemoryConfig:
     auto_extract_enabled: bool = True
     auto_extract_threshold: int = 20 
     auto_extract_async: bool = True  
+    working_uses_event_time: bool = False
 
 
 @dataclass
@@ -43,6 +44,11 @@ class SearchResult:
     episodic: List[Dict[str, Any]] = field(default_factory=list)
     procedural: List[Dict[str, Any]] = field(default_factory=list)
     working: Optional[Dict[str, Any]] = None
+
+    @staticmethod
+    def _source_label(item: Dict[str, Any]) -> str:
+        app = item.get("source_app")
+        return f"[来源：{app}] " if app else ""
     
     def to_context(
         self, query: str = "", max_items: int = 3, *,
@@ -58,7 +64,7 @@ class SearchResult:
         if working_history is not None:
             context_parts.append("[Relevant Working States]")
             for i, item in enumerate(working_history[:max_items], 1):
-                context_parts.append(f"State {i}（{item['timestamp']}）：{item['text'][:200]}")
+                context_parts.append(f"State {i}（{item['timestamp']}）：{self._source_label(item)}{item['text'][:200]}")
             if not working_history:
                 context_parts.append("No relevant working states")
         elif self.working:
@@ -67,9 +73,9 @@ class SearchResult:
             focus = self.working.get("content", {}).get("focus", "None")
             progress = self.working.get("content", {}).get("progress", "None")
             context_parts.append(f"State Name：{state_name}")
-            context_parts.append(f"Current Focus：{focus}")
+            context_parts.append(f"Current Focus：{self._source_label(self.working)}{focus}")
             context_parts.append(f"Progress：{progress}")
-        else:
+        elif not any(item.get("working_state") for item in self.episodic[:max_items]):
             context_parts.append("[Current Working State]")
             context_parts.append("State Name：None")
             context_parts.append("Current Focus：None")
@@ -87,12 +93,16 @@ class SearchResult:
                 if not text:
                     continue
                 
+                display = f"{self._source_label(item)}{text[:200]}"
                 if timestamp and score is not None:
-                    context_parts.append(f"Episode {i}（{timestamp}, Similarity: {score:.2f}）：{text[:200]}")
+                    context_parts.append(f"Episode {i}（{timestamp}, Similarity: {score:.2f}）：{display}")
                 elif timestamp:
-                    context_parts.append(f"Episode {i}（{timestamp}）：{text[:200]}")
+                    context_parts.append(f"Episode {i}（{timestamp}）：{display}")
                 else:
-                    context_parts.append(f"Episode {i}：{text[:200]}")
+                    context_parts.append(f"Episode {i}：{display}")
+                if state := item.get("working_state"):
+                    progress = f"，进度 {state['progress']}" if state.get("progress") else ""
+                    context_parts.append(f"  当时的 Working 状态：{state['state_name']}{progress}")
         else:
             context_parts.append("No relevant experience")
         context_parts.append("")
@@ -113,17 +123,18 @@ class SearchResult:
                     continue
                 similarity = item.get("similarity")
 
+                display = f"{self._source_label(item)}{display_text[:100]}"
                 if similarity is not None:
-                    context_parts.append(f"- {display_text[:100]} (相似度: {similarity:.2f})")
+                    context_parts.append(f"- {display} (相似度: {similarity:.2f})")
                 else:
-                    context_parts.append(f"- {display_text[:100]}")
+                    context_parts.append(f"- {display}")
         else:
             context_parts.append("")
         context_parts.append("")
         context_parts.append("[Procedural Memory]")
         if self.procedural and len(self.procedural) > 0:
             for i, item in enumerate(self.procedural[:max_items], 1):
-                context_parts.append(format_procedural_rule(item.get("rule", item), i))
+                context_parts.append(self._source_label(item) + format_procedural_rule(item.get("rule", item), i))
         else:
             context_parts.append("No rules available")
         context_parts.append("")        
@@ -233,6 +244,7 @@ class Memory:
             )
         
         full_metadata = {**self._metadata, **(metadata or {})}
+        working_timestamp = full_metadata.get("session_date_time") if self.config.working_uses_event_time else None
         
         result_details = {
             "text": text[:100] + "..." if len(text) > 100 else text,
@@ -257,11 +269,13 @@ class Memory:
             try:
                 from memory.semantic_memory import store_semantic_profile
 
+                source_id = (full_metadata.get("message_id")
+                             if full_metadata.get("source_app") or full_metadata.get("companion_upload") else None)
                 semantic_result = store_semantic_profile(
                     text=text,
                     user_id=self.user_id,
                     namespace=self.namespace,
-                    evidence_episode_ids=None,
+                    evidence_episode_ids=[source_id] if source_id else None,
                     use_llm=True
                 )
                 
@@ -308,6 +322,7 @@ class Memory:
                         lookback_episodes=5,
                         session_id=self.session_id,
                         auto_update_working_memory=self.config.enable_working,
+                        working_timestamp=working_timestamp,
                         metadata=full_metadata,  
                         namespace=self.namespace,  
                     )
@@ -363,6 +378,7 @@ class Memory:
                 node_id = wm.start_state(
                     state_name=text[:50],
                     content={"text": text, **full_metadata},
+                    timestamp=working_timestamp,
                 )
                 result_details["working"] = {"success": True, "node_id": node_id}
                 stored_types.append("working")
@@ -497,6 +513,7 @@ class Memory:
                         "timestamp": ep.timestamp,
                         "event_type": ep.event_type,
                         "score": score,
+                        **({"source_app": ep.metadata["source_app"]} if ep.metadata.get("source_app") else {}),
                     }
                     for ep, score in episodes
                 ]
@@ -511,6 +528,7 @@ class Memory:
                     {
                         "rule": rule.to_dict(),
                         "score": score,
+                        **({"source_app": rule.meta["source_app"]} if rule.meta.get("source_app") else {}),
                     }
                     for rule, score in rules
                 ]

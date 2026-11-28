@@ -293,7 +293,8 @@ class Neo4jEpisodeGraph:
             locations=locations,
             persons=persons,
             topics=topics,
-            namespace=self.namespace
+            namespace=self.namespace,
+            source_app=episode.metadata.get("source_app")
         )
         
         builder.close()

@@ -15,44 +15,31 @@
 
 后台用 RapidOCR 运行 PaddleOCR 的 PP-OCR 模型，保存每行识别文字、置信度和位置。PDF 优先读取内嵌文字，最多对 8 个缺少可读文字的页面尝试识别内嵌图片。后台用可靠文字生成草稿。正文无法读取时，详情仍提供原件、文件名和来源 App。
 
-DeepSeek 复判可以为同一条记忆返回多个有明确证据的类别。在「补充正文或更正标签」中可以确认主标签、附加标签和是否需要跟进，也可以补充或替换正文。保存后更新个人分类和相关记忆视图。每条记忆最新确认的主标签和可用正文会用于该账号之后的分类。增量拟合复用 `classifier/embeddings.npz` 和配套的 `annotations-unified/dataset.json`。
+如果快捷指令能取得 Todo 的稳定任务 ID，可以补充 `source_app=Todo`、`todo_id` 和 `is_completed`。JSON 使用布尔值，表单使用 `true` / `false`。同账号、同任务的完成记录可以把匹配的 Working 状态提前标为 inactive，并保存触发消息 ID 和接收时间。只输入来源 App 或普通截图也能走 v2 分类。
 
-## 构建个人记忆图
+## HGP v2 个人记忆
 
-### 安装分类模型
+新分享由电脑端运行 v2。文字和 OCR 正文交给 `outputs/four-head-500` 的本地 Qwen 分类头，复用 HGP 原版的低置信度 fallback prompt 和 adaptive threshold。DeepSeek 会收到需要复判或提取结构的正文。事件和语义进入本机 `v2-episodic`、`v2-semantic`。Working 从最近事件推断，与 Procedural 一起保存在当前账号的 `hgp/v2` 目录。每个账号有独立的图 namespace 和 adaptive 状态。按来源 App 分配 Working 轨迹，来源未知的分享共用一条轨迹。
 
-安装 Quick Start 中的依赖并解压预置 `outputs/`。本地分类读取 `outputs/hgp3-train-2200/classifier/` 下的 `head.pt` 和 `config.json`。在项目根目录安装分类依赖并下载 Qwen。适用于 64 位 Windows 和 Apple Silicon Mac。
+启动前按 Quick Start 配置 Neo4j 和 DeepSeek，准备 `outputs/four-head-500`、`models/qwen3-embedding-0.6b` 和 `models/hgp-distiluse-base-multilingual-cased-v2`。本机 Neo4j 需支持多数据库，首次处理时会建立 v2 图库。缺少依赖或处理失败时，收件箱仍保留原件，可从详情重试。
 
 **Windows PowerShell**
 
 ```powershell
-& .\.venv\Scripts\python.exe -m pip install "sentence-transformers>=5.2.3,<6"
-& .\.venv\Scripts\python.exe -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-Embedding-0.6B', local_dir='models/qwen3-embedding-0.6b')"
+& .\.venv\Scripts\python.exe -m pip install "sentence-transformers>=5.2.3,<6" "python-dotenv>=1,<2"
 ```
 
 **macOS 终端**
 
 ```bash
-./.venv/bin/python -m pip install "sentence-transformers>=5.2.3,<6"
-./.venv/bin/python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-Embedding-0.6B', local_dir='models/qwen3-embedding-0.6b')"
+./.venv/bin/python -m pip install "sentence-transformers>=5.2.3,<6" "python-dotenv>=1,<2"
 ```
 
-### 创建并连接 usermemory
+在个人图中选择带 `HGP v2` 的视图，在「任务与流程」查看 Working 轨迹和 Procedural 规则。早期分享仍对应原来的 `usermemory` 图视图，服务启动时只恢复尚未处理完的 v2 分享。
 
-启动支持多数据库的本机 Neo4j。在 `system` 库执行 `CREATE DATABASE usermemory IF NOT EXISTS;`。 [安装 Neo4j Desktop](https://neo4j.com/docs/desktop/current/installation/)
+可以在详情补充无法提取的正文。已经生成 v2 记忆的记录，后续手动更正只更新收件箱。删除分享时会清理它直接生成且可以通过来源 ID 定位的 v2 记录。HGP 之前合并、替换的知识或已完成的 adaptive 训练无法按一条分享回滚。
 
-完成 Quick Start 的本机服务配置后，重新启动 Companion。 [本机服务配置](../README.md#2-配置本机服务)
-
-分类确定的语义和事件上传会自动同步到 `usermemory`。Companion 按 `namespace` 隔离账号，按 `route` 显示视图。
-
-| `route` | 节点标签 | 页面视图 |
-| --- | --- | --- |
-| `semantic` | `SemanticCandidate` | 我的偏好与概念 |
-| `episodic` | `ImportedEpisode` | 我的事件 |
-
-符合条件的历史记录或同步失败的记录，可以在详情里点「同步到个人图」。
-
-个人图中每条上传对应一个节点。兼具语义和事件标签的记忆会出现在两个视图里，共用一个节点。可在 Companion 点开节点查看上传原件和来源 App。
+手机上传的 DeepSeek 用量记在各账号的 `hgp/v2/deepseek-usage.jsonl`。每条日志包含上传 ID、模型和 API 返回的输入、输出及缓存 token 数据。
 
 ## 管理员与个人密钥
 
