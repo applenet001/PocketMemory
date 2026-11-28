@@ -26,6 +26,12 @@
     .hero { background: #183d32; color: #fff; padding: clamp(22px, 5vw, 48px); border-radius: 20px; }
     .hero p { max-width: 44rem; margin-bottom: 0; color: #e0ebe1; }
     .hero .project { color: #c0e4bf; font-size: .88rem; margin-bottom: 14px; }
+    .jump-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+    .jump-links a {
+      padding: 7px 12px; border: 1px solid #b2cfc0; border-radius: 8px;
+      color: #fff; text-decoration: none; font-size: .9rem;
+    }
+    .jump-links a:hover { background: #315649; }
     .routing { margin: 20px 0; }
     .routing ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .routing li { padding: 16px; border-radius: 12px; background: #e5ede0; }
@@ -54,10 +60,30 @@
     .steps, .states { margin: 0 0 13px; padding-inline-start: 1.35rem; }
     .states li + li { margin-top: 5px; }
     .states code { margin-inline-start: 6px; color: var(--accent); }
+    .structure { margin-top: 24px; scroll-margin-top: 12px; }
+    .structure > p { max-width: 47rem; }
+    .graph-panel, .tree-panel { background: #fff; border: 1px solid #d7dfd3; border-radius: 14px; padding: clamp(16px, 4vw, 25px); }
+    .graph-panel + .graph-panel { margin-top: 10px; }
+    .graph-network { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.55fr); align-items: center; gap: 16px; }
+    .graph-node { background: #eaf3ed; border: 1px solid #c0d2c5; border-radius: 9px; padding: 8px 12px; overflow-wrap: anywhere; }
+    .graph-node small, .graph-node strong { display: block; }
+    .graph-node small { color: #475550; font-size: .75rem; }
+    .graph-branches { list-style: none; margin: 0; padding: 0; }
+    .graph-branches li { display: grid; grid-template-columns: minmax(96px, .9fr) minmax(0, 1.4fr); gap: 8px; align-items: center; }
+    .graph-branches li + li { margin-top: 7px; }
+    .graph-branches li > code { color: #236553; font-size: .75rem; white-space: nowrap; }
+    .state-chip { display: block; margin-top: 7px; padding: 4px 8px; border-radius: 5px; color: #5d3570; background: #f4edf6; font-size: .79rem; }
+    .state-chip code { margin-inline-end: 4px; }
+    .tree-panel summary { cursor: pointer; font-weight: 650; }
+    .tree-panel summary code { color: #815329; }
+    .tree-nodes { margin: 9px 0 0; padding-left: 2.1rem; margin-left: 10px; border-left: 2px solid #d8c1a8; }
+    .tree-nodes li { padding: 2px 0; }
+    .tree-nodes li::marker { color: #815329; }
     footer { margin-top: 20px; color: #475550; font-size: .88rem; }
     @media (max-width: 680px) {
       main { padding-top: 18px; }
-      .cards, .routing ul { grid-template-columns: minmax(0, 1fr); }
+      .cards, .routing ul, .graph-network { grid-template-columns: minmax(0, 1fr); }
+      .graph-network { gap: 10px; }
     }
   </style>
 </head>
@@ -67,6 +93,10 @@
       <p class="project">PocketMemory · HGP v2</p>
       <h1>MobileMem 记忆分类</h1>
       <p>从一次手机浏览和一段通勤对话，看 HGP 如何保存发生过的事件、提取长期知识、整理可复用规则，并跟踪会话里的任务进度。</p>
+      <nav class="jump-links" aria-label="结构展示">
+        <a href="#memory-graph">查看 Neo4j 记忆图</a>
+        <a href="#rule-tree">查看程序规则树</a>
+      </nav>
     </header>
 
     <section class="routing" aria-labelledby="routing-title">
@@ -140,7 +170,66 @@
       </article>
     </div>
 
-    <footer>示例来自 MobileMem Text 的 HGP v2 smoke 回放。正文和规则经过缩写。 <a href="https://github.com/applenet001/PocketMemory/blob/release/v2/docs/hgp-v2-mobilemem-schema.md">完整字段说明</a></footer>
+    <section class="structure" id="memory-graph" aria-labelledby="graph-title">
+      <h2 id="graph-title">Neo4j 记忆图</h2>
+      <p>节点和关系取自本机 Neo4j 的 MobileMem 回放。E1、E2 下方附有各事件发生时写入其会话的 Working 状态。</p>
+      <div class="graph-panel">
+        <h3><code>v2-episodic</code> · 情节图</h3>
+        <div class="graph-network" aria-label="羽毛球浏览事件的四条出边">
+          <div class="graph-node">
+            <small>E1 · Episode</small>
+            <strong>浏览羽毛球词条</strong>
+            <small><time datetime="2024-06-01T09:03:22+08:00">2024-06-01 09:03:22</time></small>
+            <span class="state-chip">Working · <code>state_0000</code> 浏览羽毛球 · 1/1</span>
+          </div>
+          <ul class="graph-branches">
+            <li><code>HAPPENS_AT →</code><div class="graph-node"><small>Time</small><strong>2024-06-01</strong></div></li>
+            <li><code>ABOUT →</code><div class="graph-node"><small>Topic</small><strong>羽毛球</strong></div></li>
+            <li><code>INVOLVES →</code><div class="graph-node"><small>Actor</small><strong>用户</strong></div></li>
+            <li>
+              <code>NEXT →</code>
+              <div class="graph-node">
+                <small>E2 · Episode</small>
+                <strong>开始比较通勤路线</strong>
+                <small><time datetime="2024-06-04T07:05:20+08:00">2024-06-04 07:05:20</time></small>
+                <span class="state-chip">Working · <code>state_0000</code> 规划通勤路线 · 2/2</span>
+              </div>
+            </li>
+          </ul>
+        </div>
+        <p class="storage">时间使用 UTC+08:00。E1、E2 属于不同会话，状态 ID 分别在各自会话内编号。</p>
+      </div>
+      <div class="graph-panel">
+        <h3><code>v2-semantic</code> · 同轮回放的语义图</h3>
+        <div class="edge"><span>User · 用户</span><code>HAS_INTEREST_IN →</code><span>Entity · 羽毛球</span></div>
+        <div class="edge"><span>User · 用户</span><code>LIKES →</code><span>Entity · 羽毛球</span></div>
+      </div>
+    </section>
+
+    <section class="structure" id="rule-tree" aria-labelledby="tree-title">
+      <h2 id="tree-title">程序规则树</h2>
+      <p>「通勤路线对比记录模板」的 <code>tree</code> 存储一棵顺序树。根节点是 <code>sequence</code>，子节点按顺序执行。</p>
+      <div class="tree-panel">
+        <details open>
+          <summary><code>sequence</code> · 通勤路线对比记录模板</summary>
+          <ol class="tree-nodes" aria-label="按存储顺序列出的 action 子节点">
+            <li>提前半小时出门</li>
+            <li>选择路线一：海淀–三环–建国门</li>
+            <li>记录拥堵点</li>
+            <li>记录 ETC 排队情况</li>
+            <li>记录到达后的停车可得性</li>
+            <li>记录步行距离</li>
+            <li>记录车机能耗预估</li>
+            <li>记录剩余电量影响</li>
+            <li>选择路线二：海淀–四环–朝阳门</li>
+            <li>用同一套指标记录第二条路线</li>
+            <li>比较两条路线的记录</li>
+          </ol>
+        </details>
+      </div>
+    </section>
+
+    <footer>示例来自 HGP v2 的 MobileMem Text 回放。分类卡片和规则树取自 smoke，记忆图与事件下的状态取自同一用户的全量回放。 <a href="https://github.com/applenet001/PocketMemory/blob/release/v2/docs/hgp-v2-mobilemem-schema.md">完整字段说明</a></footer>
   </main>
 </body>
 </html>
