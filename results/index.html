@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>MobileMem 记忆分类｜PocketMemory HGP v2</title>
+  <link rel="stylesheet" href="results.css">
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <p class="project">PocketMemory · HGP v2</p>
+      <h1>MobileMem 记忆分类</h1>
+      <p>从一次手机浏览和一段通勤对话，看 HGP 如何保存发生过的事件、提取长期知识、整理可复用规则，并跟踪会话里的任务进度。</p>
+      <nav class="jump-links" aria-label="结构展示">
+        <a id="memory-graph" href="memory-graph.html">查看 Neo4j 记忆图</a>
+        <a id="rule-tree" href="rule-tree.html">查看程序规则树</a>
+      </nav>
+    </header>
+
+    <section class="routing" aria-labelledby="routing-title">
+      <h2 id="routing-title">一条消息怎么进入记忆</h2>
+      <ul>
+        <li><strong>输入消息</strong><p>读取 MobileMem Text 的正文、会话、事件时间和可用的 App 来源。</p></li>
+        <li><strong>多标签路由</strong><p>同一条消息可以写入多类记忆。<code>none</code> 表示没有选中记忆类型。</p></li>
+        <li><strong>推断会话状态</strong><p>写入 Episodic 后，HGP 从最近的事件推断 Working，并更新该会话的状态轨迹。</p></li>
+      </ul>
+    </section>
+
+    <div class="cards">
+      <article class="card" aria-labelledby="episode-title">
+        <h2 id="episode-title">情节记忆 <span lang="en">Episodic</span></h2>
+        <p>记录发生了什么、什么时候发生，以及正文来自哪条消息。</p>
+        <blockquote>用户在手机上浏览了「羽毛球」词条。</blockquote>
+        <dl>
+          <div><dt><code>content</code></dt><dd>保存消息正文，页面展示的是缩写。</dd></div>
+          <div><dt><code>timestamp</code></dt><dd><time datetime="2024-06-01T09:03:22+08:00">2024-06-01 09:03:22（UTC+08:00）</time></dd></div>
+          <div><dt><code>metadata.message_id</code></dt><dd>关联原始 MobileMem 消息。</dd></div>
+        </dl>
+        <p class="storage"><code>v2-episodic</code> · 事件节点与时间、前后事件的关系</p>
+      </article>
+
+      <article class="card semantic" aria-labelledby="semantic-title">
+        <h2 id="semantic-title">语义记忆 <span lang="en">Semantic</span></h2>
+        <p>将消息里可复用的事实、偏好或兴趣保存为图关系。</p>
+        <blockquote>同一条羽毛球浏览消息也产生了一条兴趣关系。</blockquote>
+        <div class="edge" aria-label="用户通过感兴趣关系连接到羽毛球">
+          <span>用户</span><code>INTERESTED_IN →</code><span>羽毛球</span>
+        </div>
+        <dl>
+          <div><dt><code>entity_type</code></dt><dd><code>SPORT</code></dd></div>
+          <div><dt><code>evidence_ids</code></dt><dd>保留可用的来源引用。</dd></div>
+        </dl>
+        <p class="storage"><code>v2-semantic</code> · 用户、关系、实体</p>
+      </article>
+
+      <article class="card procedural" aria-labelledby="procedure-title">
+        <h2 id="procedure-title">程序性记忆 <span lang="en">Procedural</span></h2>
+        <p>把可重复执行的做法保存为带条件和步骤的规则。</p>
+        <blockquote>用户想比较两条通勤路线，并给每条路线记录一组相同的指标。</blockquote>
+        <h3>通勤路线对比记录模板</h3>
+        <dl>
+          <div><dt><code>if_conditions</code></dt><dd>需要用同一套指标比较两条通勤路线。</dd></div>
+          <div><dt><code>version</code></dt><dd>1</dd></div>
+        </dl>
+        <ol class="steps" aria-label="then_steps 节选">
+          <li>记录第一条路线的拥堵、停车和能耗。</li>
+          <li>用相同指标记录第二条路线。</li>
+          <li>比较两次记录。</li>
+        </ol>
+        <p class="storage"><code>v2-procedural</code> · <code>if_conditions</code>、<code>then_steps</code> 和规则树</p>
+      </article>
+
+      <article class="card working" aria-labelledby="working-title">
+        <h2 id="working-title">工作记忆 <span lang="en">Working</span></h2>
+        <p>从近期事件推断当前在做什么，并保留同一会话中的状态变化。</p>
+        <blockquote>通勤会话从制定路线计划推进到开始试跑第一条路线。</blockquote>
+        <h3>会话状态轨迹</h3>
+        <ol class="states">
+          <li>规划通勤路线 <code>2/2</code></li>
+          <li>通勤规划 <code>3/3</code></li>
+          <li>通勤规划 <code>4/4</code></li>
+        </ol>
+        <dl>
+          <div><dt><code>state_name</code></dt><dd>状态名称，同名状态也可以有不同的进度。</dd></div>
+          <div><dt><code>content.progress</code></dt><dd>该状态的进度字段。</dd></div>
+        </dl>
+        <p class="storage"><code>v2-working</code> · 按会话保存状态及其转换</p>
+      </article>
+    </div>
+
+    <footer>分类卡片取自 MobileMem Text 的 HGP v2 smoke 回放。 <a href="https://github.com/applenet001/PocketMemory/blob/release/v2/docs/hgp-v2-mobilemem-schema.md">完整字段说明</a></footer>
+  </main>
+</body>
+</html>
