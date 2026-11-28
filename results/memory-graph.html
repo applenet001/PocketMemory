@@ -80,10 +80,36 @@
         <div class="node-details" id="node-details" aria-live="polite" hidden></div>
         <p class="storage">时间使用 UTC+08:00。<code>NEXT</code> 可以跨会话连接事件，Working 状态 ID 在各自会话内编号。</p>
       </div>
-      <div class="graph-panel">
-        <h3><code>v2-semantic</code> · 同轮回放的语义图</h3>
-        <div class="edge"><span>User · 用户</span><code>HAS_INTEREST_IN →</code><span>Entity · 羽毛球</span></div>
-        <div class="edge"><span>User · 用户</span><code>LIKES →</code><span>Entity · 羽毛球</span></div>
+    </section>
+    <section class="structure" id="related-semantic" aria-labelledby="semantic-network-title">
+      <h2 id="semantic-network-title">相关语义记忆</h2>
+      <p>这些关系取自同一用户的 <code>v2-semantic</code> 图。每条边都从用户节点指向实体。关系旁标有「证据 E1」时，可以回到对应事件。其余按主题展示。</p>
+      <div class="semantic-groups">
+        <article class="graph-panel semantic-group">
+          <h3>兴趣与内容</h3>
+          <ul class="semantic-edges">
+            <li><code>HAS_INTEREST_IN →</code><strong>羽毛球</strong> <a href="#episode-network" data-episode-link="E1">证据 E1</a></li>
+            <li><code>LIKES →</code><strong>羽毛球</strong></li>
+            <li><code>LIKES →</code><strong>偏产品方法论的播客</strong></li>
+            <li><code>HAS_PREFERENCE →</code><strong>电子音乐</strong></li>
+          </ul>
+        </article>
+        <article class="graph-panel semantic-group">
+          <h3>通勤与路线</h3>
+          <ul class="semantic-edges">
+            <li><code>HAS_COMMUTE_MODE →</code><strong>自驾通勤</strong></li>
+            <li><code>HAS_SKILL →</code><strong>路线对比测试</strong></li>
+            <li><code>LIKES →</code><strong>高德路况快讯</strong></li>
+          </ul>
+        </article>
+        <article class="graph-panel semantic-group">
+          <h3>停车与出行偏好</h3>
+          <ul class="semantic-edges">
+            <li><code>HAS_COMMUTE_BASELINE →</code><strong>国贸地库 B2 排队 8 分钟、步行 7 分钟</strong></li>
+            <li><code>HAS_PREFERENCE →</code><strong>优先选择更稳定、怠速更少的路线和停车点</strong></li>
+            <li><code>DISLIKES →</code><strong>路边碰运气停车</strong></li>
+          </ul>
+        </article>
       </div>
     </section>
   </main>
@@ -207,11 +233,14 @@
           refresh();
         });
         graph.addEventListener('lostpointercapture', () => { drag = null; });
-        picker.addEventListener('change', () => {
-          const node = nodes.get(picker.value);
+        function jumpTo(node) {
           select(node);
           viewport.scrollLeft = node.position[0] * graph.clientWidth - viewport.clientWidth / 2;
-        });
+        }
+        picker.addEventListener('change', () => jumpTo(nodes.get(picker.value)));
+        for (const link of document.querySelectorAll('[data-episode-link]')) {
+          link.addEventListener('click', () => jumpTo(nodes.get(link.dataset.episodeLink)));
+        }
         document.querySelector('#reset-network').addEventListener('click', () => {
           for (const node of nodes.values()) node.position = [...node.initial];
           viewport.scrollLeft = 0;
