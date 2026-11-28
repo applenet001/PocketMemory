@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>程序规则树｜PocketMemory HGP v2</title>
+  <link rel="stylesheet" href="results.css">
+</head>
+<body>
+  <main>
+    <nav class="page-nav" aria-label="结果页面"><a href="index.html">返回分类概览</a><a href="memory-graph.html">Neo4j 记忆图</a></nav>
+    <section class="structure" id="rule-tree" aria-labelledby="tree-title">
+      <h1 id="tree-title">程序规则树</h1>
+      <p>「通勤路线对比记录模板」的 <code>tree</code> 存储一棵顺序树。根节点是 <code>sequence</code>，子节点按顺序执行。</p>
+      <div class="tree-panel">
+        <details open>
+          <summary><code>sequence</code> · 通勤路线对比记录模板</summary>
+          <ol class="tree-nodes" aria-label="按存储顺序列出的 action 子节点">
+            <li>提前半小时出门</li>
+            <li>选择路线一：海淀–三环–建国门</li>
+            <li>记录拥堵点</li>
+            <li>记录 ETC 排队情况</li>
+            <li>记录到达后的停车可得性</li>
+            <li>记录步行距离</li>
+            <li>记录车机能耗预估</li>
+            <li>记录剩余电量影响</li>
+            <li>选择路线二：海淀–四环–朝阳门</li>
+            <li>用同一套指标记录第二条路线</li>
+            <li>比较两条路线的记录</li>
+          </ol>
+          <div class="tree-controls" hidden>
+            <button class="action-button" type="button" id="previous-action">上一步</button>
+            <button class="action-button" type="button" id="next-action">下一步</button>
+            <output id="current-action" aria-live="polite"></output>
+          </div>
+        </details>
+      </div>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const actions = [...document.querySelectorAll('.tree-nodes li')];
+      const previous = document.querySelector('#previous-action');
+      const next = document.querySelector('#next-action');
+      const current = document.querySelector('#current-action');
+      let step = 0;
+
+      function showStep() {
+        actions.forEach((action, index) => {
+          if (index === step) action.setAttribute('aria-current', 'step');
+          else action.removeAttribute('aria-current');
+        });
+        previous.disabled = step === 0;
+        next.disabled = step === actions.length - 1;
+        current.textContent = `${step + 1}/${actions.length} · ${actions[step].textContent}`;
+      }
+
+      previous.addEventListener('click', () => { step -= 1; showStep(); });
+      next.addEventListener('click', () => { step += 1; showStep(); });
+      document.querySelector('.tree-controls').hidden = false;
+      showStep();
+    })();
+  </script>
+</body>
+</html>

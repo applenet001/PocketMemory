@@ -1,0 +1,97 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #172820;
+  background: #f3f5ee;
+  line-height: 1.65;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+main { width: min(1080px, calc(100% - 36px)); margin: 0 auto; padding: 44px 0; }
+h1, h2, h3, p { margin-top: 0; }
+h1 { font-size: clamp(1.9rem, 6vw, 3.5rem); line-height: 1.12; margin-bottom: 18px; }
+h2 { font-size: 1.22rem; line-height: 1.35; margin-bottom: 10px; }
+h3 { font-size: .93rem; margin-bottom: 6px; }
+a { color: inherit; text-underline-offset: .23em; }
+a:focus-visible { outline: 3px solid currentColor; outline-offset: 4px; }
+code { font-family: ui-monospace, Consolas, monospace; overflow-wrap: anywhere; }
+.hero { background: #183d32; color: #fff; padding: clamp(22px, 5vw, 48px); border-radius: 20px; }
+.hero p { max-width: 44rem; margin-bottom: 0; color: #e0ebe1; }
+.hero .project { color: #c0e4bf; font-size: .88rem; margin-bottom: 14px; }
+.jump-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.jump-links a {
+  padding: 7px 12px; border: 1px solid #b2cfc0; border-radius: 8px;
+  color: #fff; text-decoration: none; font-size: .9rem;
+}
+.jump-links a:hover { background: #315649; }
+.routing { margin: 20px 0; }
+.routing ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.routing li { padding: 16px; border-radius: 12px; background: #e5ede0; }
+.routing strong { display: block; margin-bottom: 4px; }
+.routing p { margin: 0; font-size: .91rem; }
+.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.card {
+  --accent: #236553;
+  --tint: #eaf3ed;
+  background: #fff; border: 1px solid #d7dfd3; border-top: 5px solid var(--accent);
+  border-radius: 14px; padding: clamp(17px, 3vw, 26px); min-width: 0;
+}
+.semantic { --accent: #325e80; --tint: #eaf2f8; }
+.procedural { --accent: #815329; --tint: #f6eee3; }
+.working { --accent: #70467d; --tint: #f4edf6; }
+.card h2 span { color: var(--accent); font-size: .8em; margin-inline-start: 5px; }
+.storage { margin-bottom: 0; font-size: .85rem; color: #475550; }
+blockquote { margin: 0 0 14px; background: var(--tint); border-radius: 8px; padding: 11px 13px; }
+dl { margin: 0 0 13px; }
+dl div { display: grid; grid-template-columns: minmax(6.8rem, 38%) minmax(0, 1fr); gap: 10px; padding: 7px 0; border-bottom: 1px solid #e3e8e1; }
+dt { color: var(--accent); font-size: .81rem; }
+dd { margin: 0; overflow-wrap: anywhere; }
+.edge { margin-bottom: 13px; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.edge span { padding: 4px 8px; border-radius: 6px; background: var(--tint); }
+.edge code { color: var(--accent); font-size: .87rem; }
+.steps, .states { margin: 0 0 13px; padding-inline-start: 1.35rem; }
+.states li + li { margin-top: 5px; }
+.states code { margin-inline-start: 6px; color: var(--accent); }
+.structure { margin-top: 24px; scroll-margin-top: 12px; }
+.structure > p { max-width: 47rem; }
+.graph-panel, .tree-panel { background: #fff; border: 1px solid #d7dfd3; border-radius: 14px; padding: clamp(16px, 4vw, 25px); }
+.graph-panel + .graph-panel { margin-top: 10px; }
+.graph-network { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.55fr); align-items: center; gap: 16px; }
+.graph-node { background: #eaf3ed; border: 1px solid #c0d2c5; border-radius: 9px; padding: 8px 12px; overflow-wrap: anywhere; }
+.graph-node small, .graph-node strong { display: block; }
+.graph-node small { color: #475550; font-size: .75rem; }
+.state-chip { display: block; margin-top: 7px; padding: 4px 8px; border-radius: 5px; color: #5d3570; background: #f4edf6; font-size: .79rem; }
+.state-chip code { margin-inline-end: 4px; }
+button.graph-node { width: 100%; color: inherit; font: inherit; text-align: left; }
+button:focus-visible { outline: 3px solid #236553; outline-offset: 3px; }
+.graph-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.graph-controls[hidden], .node-details[hidden], .tree-controls[hidden] { display: none; }
+.graph-controls small { color: #475550; }
+.action-button { border: 1px solid #bfcfc3; border-radius: 6px; background: #fff; padding: 4px 10px; font: inherit; color: #236553; cursor: pointer; }
+.action-button:disabled { opacity: .5; cursor: default; }
+.page-nav { display: flex; flex-wrap: wrap; gap: 14px; font-size: .9rem; }
+.graph-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.graph-viewport { overflow-x: auto; }
+.graph-network.interactive { display: block; position: relative; min-width: 925px; height: 330px; border: 1px solid #d7dfd3; border-radius: 10px; background: radial-gradient(#d5dfd2 1px, #f7faf5 1px) 0 0 / 16px 16px; }
+.interactive canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.interactive .graph-node { position: absolute; z-index: 1; width: 17%; transform: translate(-50%, -50%); cursor: grab; touch-action: none; user-select: none; }
+.graph-node time { font-size: .8rem; color: #475550; }
+.graph-node .state-chip code { display: block; }
+.interactive .graph-node:active { cursor: grabbing; }
+.interactive .graph-node[aria-pressed="true"] { border-color: #236553; box-shadow: 0 0 0 2px #236553; z-index: 2; }
+.node-details { margin: 10px 0; padding: 8px 12px; background: #f0f5ee; border-radius: 8px; font-size: .89rem; }
+.node-details ul { margin: 4px 0 0; padding-inline-start: 1.25rem; }
+.tree-panel summary { cursor: pointer; font-weight: 650; }
+.tree-panel summary code { color: #815329; }
+.tree-nodes { margin: 9px 0 0; padding-left: 2.1rem; margin-left: 10px; border-left: 2px solid #d8c1a8; }
+.tree-nodes li { padding: 2px 0; }
+.tree-nodes li::marker { color: #815329; }
+.tree-nodes li[aria-current="step"] { background: #f6eee3; border-radius: 4px; padding-inline: 4px; }
+.tree-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+.tree-controls output { color: #815329; font-size: .86rem; }
+footer { margin-top: 20px; color: #475550; font-size: .88rem; }
+@media (max-width: 680px) {
+  main { padding-top: 18px; }
+  .cards, .routing ul, .graph-network { grid-template-columns: minmax(0, 1fr); }
+  .graph-network { gap: 10px; }
+}

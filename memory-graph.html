@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Neo4j 记忆图｜PocketMemory HGP v2</title>
+  <link rel="stylesheet" href="results.css">
+</head>
+<body>
+  <main>
+    <nav class="page-nav" aria-label="结果页面"><a href="index.html">返回分类概览</a><a href="rule-tree.html">程序规则树</a></nav>
+    <section class="structure" id="memory-graph" aria-labelledby="graph-title">
+      <h1 id="graph-title">Neo4j 记忆图</h1>
+      <p>10 条连续事件取自同一位 MobileMem 用户的回放。箭头对应 Neo4j 的 <code>NEXT</code> 关系。每条事件下方显示当时写入其会话的 Working 状态。</p>
+      <div class="graph-panel">
+        <h3><code>v2-episodic</code> · 情节图</h3>
+        <div class="graph-controls" hidden>
+          <small>点选节点查看关系。可以横向滑动图面，也可以拖动节点。</small>
+          <div class="graph-actions">
+            <label for="episode-picker">跳到</label>
+            <select id="episode-picker" class="action-button"></select>
+            <button class="action-button" type="button" id="reset-network">重置布局</button>
+          </div>
+        </div>
+        <div class="graph-viewport" tabindex="0" role="region" aria-label="可横向浏览的事件图">
+          <div class="graph-network" id="episode-network" role="group" aria-label="由 NEXT 连接的十条情节">
+            <button class="graph-node" type="button" data-node="E1" data-next="E2" data-position=".10,.25" data-app="Screen Memo">
+              <small>E1 · Episode</small><strong>浏览羽毛球词条</strong>
+              <time datetime="2024-06-01T09:03:22+08:00">06-01 09:03:22</time>
+              <span class="state-chip">浏览羽毛球 · 1/1 <code>state_0000</code></span>
+            </button>
+            <button class="graph-node" type="button" data-node="E2" data-next="E3" data-position=".30,.25">
+              <small>E2 · Episode</small><strong>规划通勤路线对比</strong>
+              <time datetime="2024-06-04T07:05:20+08:00">06-04 07:05:20</time>
+              <span class="state-chip">规划通勤路线 · 2/2 <code>state_0000</code></span>
+            </button>
+            <button class="graph-node" type="button" data-node="E3" data-next="E4" data-position=".50,.25">
+              <small>E3 · Episode</small><strong>试跑第一条通勤路线</strong>
+              <time datetime="2024-06-04T07:09:10+08:00">06-04 07:09:10</time>
+              <span class="state-chip">通勤规划 · 3/3 <code>state_0001</code></span>
+            </button>
+            <button class="graph-node" type="button" data-node="E4" data-next="E5" data-position=".70,.25">
+              <small>E4 · Episode</small><strong>整理需求风险条目</strong>
+              <time datetime="2024-06-04T07:10:45+08:00">06-04 07:10:45</time>
+              <span class="state-chip">通勤规划 · 4/4 <code>state_0002</code></span>
+            </button>
+            <button class="graph-node" type="button" data-node="E5" data-next="E6" data-position=".90,.25">
+              <small>E5 · Episode</small><strong>记录拥堵和停车情况</strong>
+              <time datetime="2024-06-04T09:12:30+08:00">06-04 09:12:30</time>
+              <span class="state-chip">路线规划 · 5/5 <code>state_0003</code></span>
+            </button>
+            <button class="graph-node" type="button" data-node="E6" data-next="E7" data-position=".90,.75">
+              <small>E6 · Episode</small><strong>确定路线对比条件</strong>
+              <time datetime="2024-06-04T09:14:20+08:00">06-04 09:14:20</time>
+              <span class="state-chip">通勤路线对比 · 5/5 <code>state_0004</code></span>
+            </button>
+            <button class="graph-node" type="button" data-node="E7" data-next="E8" data-position=".70,.75">
+              <small>E7 · Episode</small><strong>精简通勤信息来源</strong>
+              <time datetime="2024-06-05T20:08:44+08:00">06-05 20:08:44</time>
+              <span class="state-chip">路线对比 · 5/5 <code>state_0000</code></span>
+            </button>
+            <button class="graph-node" type="button" data-node="E8" data-next="E9" data-position=".50,.75">
+              <small>E8 · Episode</small><strong>为减压清单设时限</strong>
+              <time datetime="2024-06-05T20:18:37+08:00">06-05 20:18:37</time>
+              <span class="state-chip">路线对比规划 · 5/5 <code>state_0001</code></span>
+            </button>
+            <button class="graph-node" type="button" data-node="E9" data-next="E10" data-position=".30,.75">
+              <small>E9 · Episode</small><strong>整理通勤减压流程</strong>
+              <time datetime="2024-06-05T20:22:10+08:00">06-05 20:22:10</time>
+              <span class="state-chip">通勤路线规划 · 5/5 <code>state_0002</code></span>
+            </button>
+            <button class="graph-node" type="button" data-node="E10" data-position=".10,.75" data-app="Screen Memo">
+              <small>E10 · Episode</small><strong>浏览音乐词条</strong>
+              <time datetime="2024-06-09T03:48:59+08:00">06-09 03:48:59</time>
+              <span class="state-chip">通勤优化 · 5/5 <code>state_0000</code></span>
+            </button>
+          </div>
+        </div>
+        <div class="node-details" id="node-details" aria-live="polite" hidden></div>
+        <p class="storage">时间使用 UTC+08:00。<code>NEXT</code> 可以跨会话连接事件，Working 状态 ID 在各自会话内编号。</p>
+      </div>
+      <div class="graph-panel">
+        <h3><code>v2-semantic</code> · 同轮回放的语义图</h3>
+        <div class="edge"><span>User · 用户</span><code>HAS_INTEREST_IN →</code><span>Entity · 羽毛球</span></div>
+        <div class="edge"><span>User · 用户</span><code>LIKES →</code><span>Entity · 羽毛球</span></div>
+      </div>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const graph = document.querySelector('#episode-network');
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      if (context) {
+        const controls = document.querySelector('.graph-controls');
+        const viewport = document.querySelector('.graph-viewport');
+        const picker = document.querySelector('#episode-picker');
+        const details = document.querySelector('#node-details');
+        const nodes = new Map([...graph.querySelectorAll('[data-node]')].map(button => {
+          const initial = button.dataset.position.split(',').map(Number);
+          const id = button.dataset.node;
+          const title = `${id} · ${button.querySelector('strong').textContent}`;
+          picker.append(new Option(id, id));
+          return [id, { id, title, button, initial, position: [...initial] }];
+        }));
+        const first = nodes.get('E1');
+        const edges = [...nodes.values()].filter(node => node.button.dataset.next).map(node => ({
+          source: node,
+          target: nodes.get(node.button.dataset.next)
+        }));
+        let selected = first;
+        let drag = null;
+        let frame = 0;
+
+        function draw() {
+          frame = 0;
+          const width = graph.clientWidth;
+          const height = graph.clientHeight;
+          const scale = window.devicePixelRatio || 1;
+          canvas.width = Math.round(width * scale);
+          canvas.height = Math.round(height * scale);
+          context.setTransform(scale, 0, 0, scale, 0, 0);
+          for (const node of nodes.values()) {
+            const margins = [(node.button.offsetWidth / 2 + 5) / width, (node.button.offsetHeight / 2 + 5) / height];
+            node.position = node.position.map((coordinate, axis) => Math.min(1 - margins[axis], Math.max(margins[axis], coordinate)));
+            node.button.style.left = `${node.position[0] * 100}%`;
+            node.button.style.top = `${node.position[1] * 100}%`;
+          }
+          for (const edge of edges) {
+            const [x, y] = edge.source.position.map((point, axis) => point * [width, height][axis]);
+            const [tx, ty] = edge.target.position.map((point, axis) => point * [width, height][axis]);
+            const dx = tx - x;
+            const dy = ty - y;
+            if (Math.hypot(dx, dy) < 1) continue;
+            const border = Math.min(
+              (edge.target.button.offsetWidth / 2 + 3) / Math.abs(dx),
+              (edge.target.button.offsetHeight / 2 + 3) / Math.abs(dy)
+            );
+            if (border >= 1) continue;
+            const endX = tx - dx * border;
+            const endY = ty - dy * border;
+            const angle = Math.atan2(dy, dx);
+            const active = selected === edge.source || selected === edge.target;
+            context.strokeStyle = active ? '#236553' : '#bdcac2';
+            context.lineWidth = active ? 2 : 1.2;
+            context.beginPath();
+            context.moveTo(x, y);
+            context.lineTo(endX, endY);
+            context.moveTo(endX - 8 * Math.cos(angle - .5), endY - 8 * Math.sin(angle - .5));
+            context.lineTo(endX, endY);
+            context.lineTo(endX - 8 * Math.cos(angle + .5), endY - 8 * Math.sin(angle + .5));
+            context.stroke();
+          }
+        }
+
+        function refresh() {
+          if (!frame) frame = requestAnimationFrame(draw);
+        }
+
+        function select(node) {
+          selected = node;
+          picker.value = node.id;
+          for (const entry of nodes.values()) entry.button.setAttribute('aria-pressed', String(entry === node));
+          const title = document.createElement('strong');
+          title.textContent = node.title;
+          const related = document.createElement('ul');
+          const date = node.button.querySelector('time').dateTime.slice(0, 10);
+          const items = [`HAPPENS_AT → Time · ${date}`];
+          if (node.id === 'E1') items.push('ABOUT → Topic · 羽毛球', 'INVOLVES → Actor · 用户');
+          if (node.button.dataset.app) items.push(`来源 App · ${node.button.dataset.app}`);
+          for (const { source: origin, target } of edges) {
+            if (node !== origin && node !== target) continue;
+            items.push(node === origin ? `NEXT → ${target.title}` : `${origin.title} → NEXT → ${node.id}`);
+          }
+          for (const value of items) {
+            const item = document.createElement('li');
+            item.textContent = value;
+            related.append(item);
+          }
+          const state = node.button.querySelector('.state-chip');
+          details.replaceChildren(title);
+          details.append(state.cloneNode(true));
+          details.append(related);
+          refresh();
+        }
+
+        canvas.setAttribute('aria-hidden', 'true');
+        graph.prepend(canvas);
+        graph.classList.add('interactive');
+        controls.hidden = false;
+        details.hidden = false;
+        for (const node of nodes.values()) {
+          node.button.addEventListener('click', () => select(node));
+          node.button.addEventListener('pointerdown', event => {
+            if (event.button !== 0 || drag) return;
+            node.button.setPointerCapture(event.pointerId);
+            drag = { node, pointerId: event.pointerId, start: [event.clientX, event.clientY], position: [...node.position] };
+          });
+        }
+        graph.addEventListener('pointermove', event => {
+          if (!drag || event.pointerId !== drag.pointerId) return;
+          drag.node.position = [
+            drag.position[0] + (event.clientX - drag.start[0]) / graph.clientWidth,
+            drag.position[1] + (event.clientY - drag.start[1]) / graph.clientHeight
+          ];
+          refresh();
+        });
+        graph.addEventListener('lostpointercapture', () => { drag = null; });
+        picker.addEventListener('change', () => {
+          const node = nodes.get(picker.value);
+          select(node);
+          viewport.scrollLeft = node.position[0] * graph.clientWidth - viewport.clientWidth / 2;
+        });
+        document.querySelector('#reset-network').addEventListener('click', () => {
+          for (const node of nodes.values()) node.position = [...node.initial];
+          viewport.scrollLeft = 0;
+          select(first);
+        });
+        new ResizeObserver(refresh).observe(graph);
+        select(first);
+      }
+    })();
+  </script>
+</body>
+</html>
